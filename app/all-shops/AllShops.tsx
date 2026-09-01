@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -123,7 +123,7 @@ function isShopOpen(
   return false;
 }
 
-export default function AllShops() {
+  function AllShopsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -662,5 +662,32 @@ const pageDescription = selectedCategory
           )}
       </section>
     </main>
+  );
+}
+
+export default function AllShops() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#f5f6f4]">
+          <div className="mx-auto max-w-[1400px] px-5 py-10 sm:px-8 lg:px-10">
+            <div className="h-12 w-full max-w-[620px] animate-pulse rounded-[15px] bg-black/[0.06]" />
+
+            <div className="mt-8 h-10 w-64 animate-pulse rounded bg-black/[0.06]" />
+
+            <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map((item) => (
+                <div
+                  key={item}
+                  className="h-[360px] animate-pulse rounded-[24px] bg-white"
+                />
+              ))}
+            </div>
+          </div>
+        </main>
+      }
+    >
+      <AllShopsContent />
+    </Suspense>
   );
 }

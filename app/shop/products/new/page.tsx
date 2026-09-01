@@ -5,6 +5,7 @@ import {
   FormEvent,
   useEffect,
   useMemo,
+  Suspense,
   useRef,
   useState,
 } from "react";
@@ -26,7 +27,7 @@ const CATEGORIES = [
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 
-export default function AddProductPage() {
+ function AddProductPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -1352,9 +1353,31 @@ function MiniSpinner() {
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
+      strokeLinejoin="round"
       className="animate-spin"
     >
       <path d="M12 3a9 9 0 1 0 9 9" />
     </svg>
+  );
+}
+
+export default function AddProductPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#f5f6f4] text-[#111]">
+          <section className="mx-auto w-full max-w-[900px] px-5 py-10 sm:px-8">
+            <div className="animate-pulse">
+              <div className="h-3 w-32 rounded-full bg-black/[0.07]" />
+              <div className="mt-3 h-10 w-64 rounded-xl bg-black/[0.07]" />
+              <div className="mt-3 h-4 w-80 rounded-full bg-black/[0.05]" />
+              <div className="mt-8 h-[500px] rounded-[26px] bg-white" />
+            </div>
+          </section>
+        </main>
+      }
+    >
+      <AddProductPageContent />
+    </Suspense>
   );
 }

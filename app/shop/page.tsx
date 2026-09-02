@@ -1,3 +1,4 @@
+
 "use client"; 
  
 import { useEffect, useMemo, useRef, useState } from "react"; 
@@ -232,22 +233,77 @@ const [cropSaving, setCropSaving] = useState(false);
           return; 
         } 
  
-        if (status === "approved") { 
-          setShop({ 
-            id: application.id, 
-            name: application.store_name || "Your Shop", 
-            description: 
-              application.description || 
-              "Add a description to tell customers about your shop.", 
-            store_image_url: application.store_image_url || null, 
-            status: "approved", 
-          }); 
- 
-          setStats(emptyStats); 
-          setShopStatus("approved"); 
- 
-          return; 
-        } 
+        if (status === "approved") {
+  const { data: actualShop, error: actualShopError } = await supabase
+    .from("shops")
+    .select("id")
+    .eq("application_id", application.id)
+    .maybeSingle();
+
+  if (!mounted) return;
+
+  if (actualShopError) {
+    console.error("Actual shop lookup error:", {
+      message: actualShopError.message,
+      details: actualShopError.details,
+      hint: actualShopError.hint,
+      code: actualShopError.code,
+    });
+  }
+
+  const shopId = actualShop?.id || application.id;
+
+  let productsCount = 0;
+  let availableProductsCount = 0;
+  let unavailableProductsCount = 0;
+
+  if (actualShop?.id) {
+    const { data: products, error: productsError } = await supabase
+      .from("products")
+      .select("id, available")
+      .eq("shop_id", actualShop.id);
+
+    if (productsError) {
+      console.error("Products stats error:", {
+        message: productsError.message,
+        details: productsError.details,
+        hint: productsError.hint,
+        code: productsError.code,
+      });
+    } else {
+      productsCount = products?.length ?? 0;
+
+      availableProductsCount =
+        products?.filter((product) => product.available === true).length ?? 0;
+
+      unavailableProductsCount =
+        products?.filter((product) => product.available === false).length ?? 0;
+    }
+  }
+
+  setShop({
+    id: shopId,
+    name: application.store_name || "Your Shop",
+    description:
+      application.description ||
+      "Add a description to tell customers about your shop.",
+    store_image_url: application.store_image_url || null,
+    status: "approved",
+  });
+
+  setStats({
+    newOrders: 0,
+    activeOrders: 0,
+    completedOrders: 0,
+    products: productsCount,
+    availableProducts: availableProductsCount,
+    unavailableProducts: unavailableProductsCount,
+  });
+
+  setShopStatus("approved");
+
+  return;
+}
  
         console.warn( 
           "Unknown shop application status:", 

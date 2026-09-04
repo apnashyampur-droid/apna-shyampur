@@ -538,6 +538,24 @@ export default function ProductsPage() {
         <div className="h-8" />
       </section>
 
+      {/* FOOTER */}
+
+     {/* FOOTER */}
+
+<div className="pb-8 pt-10 text-center">
+  <div className="text-[11px] font-semibold">
+    <span className="text-black/50">
+      © 2026
+    </span>{" "}
+    <span className="text-black/75">
+      PNT
+    </span>
+    <span className="text-[#159447]">
+      VERSE
+    </span>
+  </div>
+</div>
+
       {/* DELETE MODAL */}
       {deleteTarget && (
         <DeleteModal

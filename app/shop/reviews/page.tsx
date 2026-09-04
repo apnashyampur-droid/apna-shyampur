@@ -406,7 +406,7 @@ created_at
   <EmptyReviews />
 ) : (
   <div className="mt-5 overflow-hidden rounded-[24px] border border-black/[0.07] bg-white shadow-[0_12px_40px_rgba(0,0,0,.025)]">
-    <div className="max-h-[520px] overflow-y-auto overscroll-contain p-4 sm:p-5">
+   <div className="max-h-none overflow-visible p-4 sm:p-5 lg:max-h-[520px] lg:overflow-y-auto lg:overscroll-contain">
       <div className="space-y-3">
         {reviews.map((review) => (
           <ReviewCard
@@ -422,11 +422,21 @@ created_at
 
         {/* FOOTER */}
 
-        <div className="pb-8 pt-10 text-center">
-          <div className="text-[9px] font-semibold text-black/25">
-            Apna Shyampur · Shop Management
-          </div>
-        </div>
+        {/* FOOTER */}
+
+<div className="pb-8 pt-8 text-center">
+  <div className="text-[11px] font-semibold">
+    <span className="text-black/50">
+      © 2026
+    </span>{" "}
+    <span className="text-black/75">
+      PNT
+    </span>
+    <span className="text-[#159447]">
+      VERSE
+    </span>
+  </div>
+</div>
       </section>
     </main>
   );

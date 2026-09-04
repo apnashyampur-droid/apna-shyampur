@@ -13,6 +13,13 @@ import { createClient } from "@/lib/supabase/client";
 /* TYPES                                                                      */
 /* -------------------------------------------------------------------------- */
 
+type ShopDiscount = {
+  id: string;
+  title: string | null;
+  description: string | null;
+  discount_percent: number | null;
+};
+
 type Shop = {
   id: string;
   name: string;
@@ -23,6 +30,7 @@ type Shop = {
   address: string | null;
   opening_time: string | null;
   closing_time: string | null;
+  activeDiscount: ShopDiscount | null;
 };
 
 type Product = {
@@ -36,6 +44,18 @@ type Product = {
   available: boolean;
   image_url: string | null;
   created_at: string;
+};
+
+type Combo = {
+  id: string;
+  title: string;
+  description: string | null;
+  offer_price: number | null;
+  original_price: number | null;
+  product_ids: string[] | null;
+  valid_from: string;
+  valid_until: string;
+  is_enabled: boolean;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -58,17 +78,21 @@ export default function ViewShopPage() {
     return typeof value === "string" ? value : "";
   }, [params]);
 
-  const [shop, setShop] = useState<Shop | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
+const [shop, setShop] = useState<Shop | null>(null);
+const [products, setProducts] = useState<Product[]>([]);
+const [combos, setCombos] = useState<Combo[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
+const [loading, setLoading] = useState(true);
+const [refreshing, setRefreshing] = useState(false);
+const [error, setError] = useState("");
 
- const [search, setSearch] = useState("");
+const [search, setSearch] = useState("");
+
 const [discountRange, setDiscountRange] = useState<
   "1-25" | "25-50" | "50-75" | "75-100" | null
 >(null);
+
+const [showCombos, setShowCombos] = useState(false);
 
 const [cart, setCart] = useState<Record<string, number>>({});
 
@@ -123,9 +147,63 @@ const [cart, setCart] = useState<Record<string, number>>({});
           return;
         }
 
-        const currentShop = shopData as Shop;
+        const currentShop = shopData as Omit<Shop, "activeDiscount">;
 
-        setShop(currentShop);
+const now = new Date();
+
+const today = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+}).format(now);
+
+const {
+  data: discountData,
+  error: discountError,
+} = await supabase
+  .from("shop_offers")
+  .select(`
+    id,
+    shop_id,
+    title,
+    description,
+    discount_percent
+  `)
+  .eq("shop_id", currentShop.id)
+  .eq("type", "discount")
+  .eq("is_enabled", true)
+  .lte("valid_from", today)
+  .gte("valid_until", today)
+  .not("discount_percent", "is", null)
+  .order("created_at", {
+    ascending: false,
+  });
+
+if (discountError) {
+  console.error(
+    "SHOP DISCOUNT FETCH ERROR:",
+    discountError
+  );
+}
+
+const activeDiscount: ShopDiscount | null =
+  discountData && discountData.length > 0
+    ? {
+        id: discountData[0].id,
+        title: discountData[0].title,
+        description: discountData[0].description,
+        discount_percent:
+          discountData[0].discount_percent,
+      }
+    : null;
+
+const shopWithDiscount: Shop = {
+  ...currentShop,
+  activeDiscount,
+};
+
+setShop(shopWithDiscount);
 
         /* ------------------------------------------------------------------ */
         /* PRODUCTS                                                            */
@@ -165,6 +243,39 @@ const [cart, setCart] = useState<Record<string, number>>({});
         }
 
         setProducts((productData ?? []) as Product[]);
+
+/* ------------------------------------------------------------------ */
+/* COMBOS                                                              */
+/* ------------------------------------------------------------------ */
+
+const {
+  data: comboData,
+  error: combosError,
+} = await supabase
+  .from("shop_offers")
+  .select(
+    `
+      id,
+      title,
+      description,
+      offer_price,
+      original_price,
+      product_ids,
+      valid_from,
+      valid_until,
+      is_enabled
+    `
+  )
+  .eq("shop_id", currentShop.id)
+  .eq("type", "combo")
+  .eq("is_enabled", true)
+  .order("created_at", { ascending: false });
+
+if (combosError) {
+  console.error("Combos fetch error:", combosError);
+} else {
+  setCombos((comboData ?? []) as Combo[]);
+}
       } catch (err) {
         console.error("View shop error:", err);
 
@@ -256,6 +367,40 @@ const [cart, setCart] = useState<Record<string, number>>({});
     return matchesSearch && matchesDiscount;
   });
 }, [products, search, discountRange]);
+
+const todayIST = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata",
+}).format(new Date());
+
+const activeCombos = useMemo(() => {
+  return combos.filter((combo) => {
+    return (
+      combo.valid_from <= todayIST &&
+      combo.valid_until >= todayIST
+    );
+  });
+}, [combos, todayIST]);
+
+const filteredCombos = useMemo(() => {
+  const normalizedSearch = search.trim().toLowerCase();
+
+  if (!normalizedSearch) {
+    return activeCombos;
+  }
+
+  return activeCombos.filter((combo) => {
+    const title =
+      combo.title?.toLowerCase() ?? "";
+
+    const description =
+      combo.description?.toLowerCase() ?? "";
+
+    return (
+      title.includes(normalizedSearch) ||
+      description.includes(normalizedSearch)
+    );
+  });
+}, [activeCombos, search]);
 
   /* ------------------------------------------------------------------------ */
   /* SHOP OPEN/CLOSE                                                          */
@@ -360,6 +505,55 @@ const [cart, setCart] = useState<Record<string, number>>({});
 
             <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/20 to-black/5" />
 
+{shop.activeDiscount &&
+  shop.activeDiscount.discount_percent !== null && (
+   <div className="absolute right-5 top-5 z-20 max-w-[230px] sm:right-7 sm:top-7 sm:max-w-[280px]">
+  <div className="rounded-[18px] border border-white/20 bg-black/45 px-3.5 py-3 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:px-4 sm:py-3.5">
+   <div className="flex items-center gap-1.5">
+
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
+
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83Z" />
+              <circle cx="7.5" cy="7.5" r="1" />
+            </svg>
+
+          </div>
+
+          <span className="text-[7px] font-black uppercase tracking-[0.12em] text-white/70">
+            Special offer
+          </span>
+
+        </div>
+
+       <div className="mt-2 text-[22px] font-black leading-none tracking-[-0.05em] sm:text-[26px]">
+          {shop.activeDiscount.discount_percent}% OFF
+        </div>
+
+        {shop.activeDiscount.title && (
+          <div className="mt-1.5 text-[11px] font-black leading-4 tracking-[-0.01em] text-white sm:text-[13px]">
+            {shop.activeDiscount.title}
+          </div>
+        )}
+
+        {shop.activeDiscount.description && (
+          <div className="mt-1 max-w-[240px] text-[9px] font-medium leading-3.5 text-white/65 sm:text-[10px] sm:leading-4">
+            {shop.activeDiscount.description}
+          </div>
+        )}
+
+      </div>
+    </div>
+  )}
 
             {/* SHOP INFORMATION */}
 
@@ -480,9 +674,9 @@ const [cart, setCart] = useState<Record<string, number>>({});
           </button>
         </div>
 
-        {/* SEARCH + FILTER */}
+{/* SEARCH + FILTER */}
 
-{products.length > 0 && (
+{(products.length > 0 || activeCombos.length > 0) && (
   <section className="mt-6 rounded-[22px] border border-black/[0.07] bg-white p-4 shadow-[0_12px_40px_rgba(0,0,0,.03)] sm:p-5">
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
 
@@ -497,60 +691,92 @@ const [cart, setCart] = useState<Record<string, number>>({});
           onChange={(event) =>
             setSearch(event.target.value)
           }
-          placeholder="Search products..."
-          className="h-[44px] w-full rounded-[13px] border border-black/[0.08] bg-[#fafafa] py-3 pl-10 pr-4 text-[11px] font-medium text-black outline-none transition placeholder:text-black/25 focus:border-[#159447]/45 focus:bg-white"
+          placeholder={
+            showCombos
+              ? "Search combos..."
+              : "Search products..."
+          }
+          className="h-[42px] w-full rounded-[12px] border border-black/[0.08] bg-[#fafafa] py-2.5 pl-10 pr-4 text-[10px] font-medium text-black outline-none transition placeholder:text-black/25 focus:border-[#159447]/45 focus:bg-white"
         />
       </div>
 
+      {/* COMBOS BUTTON */}
+
+      <button
+        type="button"
+        onClick={() => {
+          setShowCombos((current) => !current);
+          setSearch("");
+          setDiscountRange(null);
+        }}
+        className={`inline-flex h-[42px] shrink-0 items-center justify-center gap-2 rounded-[12px] border px-4 text-[9px] font-black transition ${
+          showCombos
+            ? "border-[#159447]/30 bg-[#eef8f1] text-[#159447]"
+            : "border-black/[0.08] bg-white text-black/60 hover:border-[#159447]/30 hover:text-[#159447]"
+        }`}
+      >
+        <ComboIcon />
+
+        {showCombos ? "Products" : "Combos"}
+
+        {!showCombos && activeCombos.length > 0 && (
+          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#159447] px-1 text-[7px] text-white">
+            {activeCombos.length}
+          </span>
+        )}
+      </button>
+
       {/* DISCOUNT FILTER */}
 
-      <div className="relative shrink-0">
-       <div
-  className={`pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 ${
-    discountRange !== null
-      ? "text-[#159447]"
-      : "text-black/45"
-  }`}
->
-  <DiscountIcon />
-</div>
+      {!showCombos && (
+        <div className="relative shrink-0">
+          <div
+            className={`pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 ${
+              discountRange !== null
+                ? "text-[#159447]"
+                : "text-black/45"
+            }`}
+          >
+            <DiscountIcon />
+          </div>
 
-        <select
-          value={discountRange ?? ""}
-          onChange={(event) => {
-            const value = event.target.value;
+          <select
+            value={discountRange ?? ""}
+            onChange={(event) => {
+              const value = event.target.value;
 
-            setDiscountRange(
-              value === ""
-                ? null
-                : (value as
-                    | "1-25"
-                    | "25-50"
-                    | "50-75"
-                    | "75-100")
-            );
-          }}
-          className={`h-[44px] w-full appearance-none rounded-[13px] border pl-10 pr-10 text-[10px] font-black outline-none transition lg:w-[190px] ${
-  discountRange !== null
-    ? "border-[#159447]/45 bg-white text-[#159447] shadow-[0_0_0_3px_rgba(21,148,71,.06)]"
-    : "border-black/[0.08] bg-white text-black/60 hover:border-[#159447]/35"
-}`}
-        >
-          <option value="">Discounts Off</option>
-          <option value="1-25">1–25% OFF</option>
-          <option value="25-50">25–50% OFF</option>
-          <option value="50-75">50–75% OFF</option>
-          <option value="75-100">75–100% OFF</option>
-        </select>
+              setDiscountRange(
+                value === ""
+                  ? null
+                  : (value as
+                      | "1-25"
+                      | "25-50"
+                      | "50-75"
+                      | "75-100")
+              );
+            }}
+            className={`h-[42px] w-full appearance-none rounded-[12px] border pl-10 pr-10 text-[9px] font-black outline-none transition lg:w-[180px] ${
+              discountRange !== null
+                ? "border-[#159447]/45 bg-white text-[#159447] shadow-[0_0_0_3px_rgba(21,148,71,.06)]"
+                : "border-black/[0.08] bg-white text-black/60 hover:border-[#159447]/35"
+            }`}
+          >
+            <option value="">Discounts Off</option>
+            <option value="1-25">1–25% OFF</option>
+            <option value="25-50">25–50% OFF</option>
+            <option value="50-75">50–75% OFF</option>
+            <option value="75-100">75–100% OFF</option>
+          </select>
 
-       <ChevronDownIcon
-  className={
-    discountRange !== null
-      ? "text-[#159447]/70"
-      : undefined
-  }
-/>
-      </div>
+          <ChevronDownIcon
+            className={
+              discountRange !== null
+                ? "text-[#159447]/70"
+                : undefined
+            }
+          />
+        </div>
+      )}
 
     </div>
   </section>
@@ -558,93 +784,290 @@ const [cart, setCart] = useState<Record<string, number>>({});
 
         {/* RESULT COUNT */}
 
-        {products.length > 0 && (
-          <div className="mt-6 flex items-center justify-between gap-4">
-            <div>
-              <span className="text-[10px] font-black text-black/65">
-                {filteredProducts.length}
-              </span>{" "}
-              <span className="text-[10px] font-medium text-black/35">
-                {filteredProducts.length === 1
-                  ? "product"
-                  : "products"}
+{(showCombos
+  ? activeCombos.length > 0
+  : products.length > 0) && (
+  <div className="mt-6 flex items-center justify-between gap-4">
+    <div>
+      <span className="text-[10px] font-black text-black/65">
+        {showCombos
+          ? filteredCombos.length
+          : filteredProducts.length}
+      </span>{" "}
+      <span className="text-[10px] font-medium text-black/35">
+        {showCombos
+          ? filteredCombos.length === 1
+            ? "combo"
+            : "combos"
+          : filteredProducts.length === 1
+          ? "product"
+          : "products"}
+      </span>
+    </div>
+
+    {(search || discountRange !== null) && (
+      <button
+        type="button"
+        onClick={() => {
+          setSearch("");
+          setDiscountRange(null);
+        }}
+        className="text-[9px] font-black text-[#159447] transition hover:text-[#117d3c]"
+      >
+        Clear filters
+      </button>
+    )}
+  </div>
+)}
+
+{/* PRODUCTS / COMBOS */}
+
+{showCombos ? (
+  activeCombos.length === 0 ? (
+    <EmptyShopCombos />
+  ) : filteredCombos.length === 0 ? (
+    <NoComboResults
+      onClear={() => setSearch("")}
+    />
+  ) : (
+    <div className="mt-4 space-y-4">
+      {filteredCombos.map((combo) => {
+        const comboProducts = (combo.product_ids ?? [])
+          .map((productId) =>
+            products.find(
+              (product) => product.id === productId
+            )
+          )
+          .filter(
+            (product): product is Product =>
+              Boolean(product)
+          );
+
+        return (
+          <ComboCard
+            key={combo.id}
+            combo={combo}
+            products={comboProducts}
+          />
+        );
+      })}
+    </div>
+  )
+) : products.length === 0 ? (
+  <EmptyShopProducts
+    shopName={shop.name}
+  />
+) : filteredProducts.length === 0 ? (
+  <NoProductResults
+    onClear={() => {
+      setSearch("");
+      setDiscountRange(null);
+    }}
+  />
+) : (
+  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+    {filteredProducts.map((product) => (
+      <ProductCard
+        key={product.id}
+        product={product}
+        quantity={cart[product.id] ?? 0}
+        onAdd={() =>
+          setCart((current) => ({
+            ...current,
+            [product.id]:
+              (current[product.id] ?? 0) + 1,
+          }))
+        }
+        onIncrease={() =>
+          setCart((current) => ({
+            ...current,
+            [product.id]:
+              (current[product.id] ?? 0) + 1,
+          }))
+        }
+        onDecrease={() =>
+          setCart((current) => {
+            const currentQuantity =
+              current[product.id] ?? 0;
+
+            if (currentQuantity <= 1) {
+              const next = { ...current };
+              delete next[product.id];
+              return next;
+            }
+
+            return {
+              ...current,
+              [product.id]:
+                currentQuantity - 1,
+            };
+          })
+        }
+      />
+    ))}
+  </div>
+)}
+
+               <div className="h-10" />
+      </section>
+
+      {/* FOOTER */}
+
+      <footer className="border-t border-black/[0.07] bg-white">
+        <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-5 py-8 sm:px-8 md:flex-row md:items-center md:justify-between">
+
+          <div>
+            <div className="flex items-baseline gap-[5px] text-[16px] font-black tracking-[-0.05em]">
+              <span>APNA</span>
+              <span className="text-[#159447]">
+                SHYAMPUR
               </span>
             </div>
 
-          {(search || discountRange !== null) && (
-              <button
-                type="button"
-     onClick={() => {
-  setSearch("");
-  setDiscountRange(null);
-}}
-
-                className="text-[9px] font-black text-[#159447] transition hover:text-[#117d3c]"
-              >
-                Clear filters
-              </button>
-            )}
+            <div className="mt-1.5 flex items-center gap-2 text-[7px] font-bold tracking-[0.14em] text-black/45">
+              <span>LOCALS</span>
+              <span className="text-[#159447]">•</span>
+              <span>TRUSTED</span>
+              <span className="text-[#159447]">•</span>
+              <span>FAST</span>
+            </div>
           </div>
-        )}
 
-        {/* PRODUCTS / EMPTY */}
-
-        {products.length === 0 ? (
-          <EmptyShopProducts
-            shopName={shop.name}
-          />
-        ) : filteredProducts.length === 0 ? (
-          <NoProductResults
-      onClear={() => {
-  setSearch("");
-  setDiscountRange(null);
-}}
-          />
-        ) : (
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
-            {filteredProducts.map(
-              (product) => (
-               <ProductCard
-  key={product.id}
-  product={product}
-  quantity={cart[product.id] ?? 0}
-  onAdd={() =>
-    setCart((current) => ({
-      ...current,
-      [product.id]: (current[product.id] ?? 0) + 1,
-    }))
-  }
-  onIncrease={() =>
-    setCart((current) => ({
-      ...current,
-      [product.id]: (current[product.id] ?? 0) + 1,
-    }))
-  }
-  onDecrease={() =>
-    setCart((current) => {
-      const currentQuantity = current[product.id] ?? 0;
-
-      if (currentQuantity <= 1) {
-        const next = { ...current };
-        delete next[product.id];
-        return next;
-      }
-
-      return {
-        ...current,
-        [product.id]: currentQuantity - 1,
-      };
-    })
-  }
-/>
-              )
-            )}
+          <div className="text-[11px] font-semibold">
+            <span className="text-black/50">
+              © 2026
+            </span>{" "}
+            <span className="text-black/75">
+              PNT
+            </span>
+            <span className="text-[#159447]">
+              VERSE
+            </span>
           </div>
-        )}
 
-        <div className="h-10" />
-      </section>
+        </div>
+      </footer>
     </main>
+  );
+} 
+
+/* ========================================================================== */
+/* COMBO CARD                                                                 */
+/* ========================================================================== */
+
+function ComboCard({
+  combo,
+  products,
+}: {
+  combo: Combo;
+  products: Product[];
+}) {
+  const hasOriginalPrice =
+    combo.original_price !== null &&
+    combo.offer_price !== null &&
+    Number(combo.original_price) >
+      Number(combo.offer_price);
+
+  const discount = hasOriginalPrice
+    ? Math.round(
+        ((Number(combo.original_price) -
+          Number(combo.offer_price)) /
+          Number(combo.original_price)) *
+          100
+      )
+    : 0;
+
+  return (
+    <article className="overflow-hidden rounded-[22px] border border-black/[0.07] bg-white shadow-[0_12px_40px_rgba(0,0,0,.035)]">
+      <div className="flex flex-col sm:flex-row">
+
+        {/* COMBO PRODUCTS */}
+
+        <div className="flex shrink-0 gap-2 overflow-x-auto bg-[#f7f8f7] p-3 sm:w-[330px] sm:gap-2.5 sm:p-4">
+          {products.length > 0 ? (
+            products.slice(0, 4).map((product) => (
+              <div
+                key={product.id}
+                className="relative h-[82px] w-[82px] shrink-0 overflow-hidden rounded-[14px] bg-white sm:h-[105px] sm:w-[105px]"
+              >
+                {product.image_url ? (
+                  <img
+                    src={product.image_url}
+                    alt={product.product_name}
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-black/15">
+                    <ImagePlaceholderIcon />
+                  </div>
+                )}
+              </div>
+            ))
+          ) : (
+            <div className="flex h-[82px] w-full items-center justify-center text-black/20 sm:h-[105px]">
+              <ComboIcon large />
+            </div>
+          )}
+        </div>
+
+        {/* COMBO INFORMATION */}
+
+        <div className="flex min-w-0 flex-1 flex-col justify-center p-4 sm:p-6">
+
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eef8f1] px-2.5 py-1.5 text-[7px] font-black uppercase tracking-[0.1em] text-[#159447]">
+              <ComboIcon />
+              Combo
+            </span>
+
+            {discount > 0 && (
+              <span className="rounded-full bg-[#159447] px-2.5 py-1.5 text-[7px] font-black text-white">
+                {discount}% OFF
+              </span>
+            )}
+          </div>
+
+          <h3 className="mt-3 truncate text-[18px] font-black tracking-[-0.04em] sm:text-[21px]">
+            {combo.title}
+          </h3>
+
+          {combo.description && (
+            <p className="mt-1.5 line-clamp-2 max-w-[650px] text-[9px] leading-5 text-black/40 sm:text-[10px]">
+              {combo.description}
+            </p>
+          )}
+
+          {products.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {products.map((product) => (
+                <span
+                  key={product.id}
+                  className="rounded-full border border-black/[0.07] bg-[#fafafa] px-2.5 py-1 text-[7px] font-bold text-black/50"
+                >
+                  {product.product_name}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4 flex items-end gap-2">
+            {combo.offer_price !== null && (
+              <span className="text-[18px] font-black tracking-[-0.04em]">
+                ₹{formatPrice(Number(combo.offer_price))}
+              </span>
+            )}
+
+            {hasOriginalPrice && (
+              <span className="pb-[1px] text-[9px] font-semibold text-black/30 line-through">
+                ₹{formatPrice(Number(combo.original_price))}
+              </span>
+            )}
+          </div>
+
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -826,6 +1249,63 @@ function EmptyShopProducts({
 }
 
 /* ========================================================================== */
+/* EMPTY COMBOS                                                               */
+/* ========================================================================== */
+
+function EmptyShopCombos() {
+  return (
+    <section className="mt-6 rounded-[26px] border border-black/[0.07] bg-white px-6 py-16 text-center shadow-[0_15px_50px_rgba(0,0,0,.035)] sm:px-10 sm:py-20">
+      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[20px] bg-[#eef5ef] text-[#159447]">
+        <ComboIcon large />
+      </div>
+
+      <h2 className="mt-6 text-[21px] font-black tracking-[-0.04em]">
+        No combos available
+      </h2>
+
+      <p className="mx-auto mt-2 max-w-[430px] text-[10px] leading-5 text-black/40">
+        This shop hasn't added any active combos yet.
+        Please check back soon.
+      </p>
+    </section>
+  );
+}
+
+/* ========================================================================== */
+/* NO COMBO RESULTS                                                           */
+/* ========================================================================== */
+
+function NoComboResults({
+  onClear,
+}: {
+  onClear: () => void;
+}) {
+  return (
+    <section className="mt-6 rounded-[26px] border border-black/[0.07] bg-white px-6 py-16 text-center shadow-[0_15px_50px_rgba(0,0,0,.035)] sm:py-20">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[18px] bg-black/[0.035] text-black/35">
+        <SearchIcon large />
+      </div>
+
+      <h2 className="mt-5 text-[19px] font-black tracking-[-0.04em]">
+        No matching combos
+      </h2>
+
+      <p className="mx-auto mt-2 max-w-[380px] text-[10px] leading-5 text-black/40">
+        We couldn't find any combos matching your search.
+      </p>
+
+      <button
+        type="button"
+        onClick={onClear}
+        className="mt-5 rounded-[12px] border border-black/[0.08] bg-white px-5 py-2.5 text-[9px] font-black text-black/60 transition hover:border-black/[0.14] hover:text-black"
+      >
+        Clear Search
+      </button>
+    </section>
+  );
+}
+
+/* ========================================================================== */
 /* NO SEARCH RESULTS                                                          */
 /* ========================================================================== */
 
@@ -975,6 +1455,43 @@ function ShopPageSkeleton() {
           )}
         </div>
       </section>
+
+      {/* FOOTER */}
+
+      <footer className="border-t border-black/[0.07] bg-white">
+        <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-5 py-8 sm:px-8 md:flex-row md:items-center md:justify-between">
+
+          <div>
+            <div className="flex items-baseline gap-[5px] text-[16px] font-black tracking-[-0.05em]">
+              <span>APNA</span>
+              <span className="text-[#159447]">
+                SHYAMPUR
+              </span>
+            </div>
+
+            <div className="mt-1.5 flex items-center gap-2 text-[7px] font-bold tracking-[0.14em] text-black/45">
+              <span>LOCALS</span>
+              <span className="text-[#159447]">•</span>
+              <span>TRUSTED</span>
+              <span className="text-[#159447]">•</span>
+              <span>FAST</span>
+            </div>
+          </div>
+
+          <div className="text-[11px] font-semibold">
+            <span className="text-black/50">
+              © 2026
+            </span>{" "}
+            <span className="text-black/75">
+              PNT
+            </span>
+            <span className="text-[#159447]">
+              VERSE
+            </span>
+          </div>
+
+        </div>
+      </footer>
     </main>
   );
 }
@@ -1136,6 +1653,32 @@ function ProductsIcon({
     >
       <path d="M6 8h12l1 12H5L6 8Z" />
       <path d="M9 8a3 3 0 0 1 6 0" />
+    </svg>
+  );
+}
+
+function ComboIcon({
+  large = false,
+}: {
+  large?: boolean;
+}) {
+  const size = large ? 24 : 13;
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8 3h8l3 5-7 13L5 8l3-5Z" />
+      <path d="M5 8h14" />
+      <path d="M8 3l4 5 4-5" />
+      <path d="m9 13 3 3 3-3" />
     </svg>
   );
 }

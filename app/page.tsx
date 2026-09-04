@@ -246,6 +246,9 @@ const [user, setUser] = useState<any>(null);
 const [authLoading, setAuthLoading] = useState(true);
 const [shops, setShops] = useState<any[]>([]);
 const [shopsLoading, setShopsLoading] = useState(true);
+const [searchQuery, setSearchQuery] = useState("");
+const [searchShops, setSearchShops] = useState<any[]>([]);
+const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
 
 const requireSignIn = (shopSlug: string) => {
   if (authLoading) return;
@@ -386,19 +389,92 @@ useEffect(() => {
       })
       .limit(3);
 
-    if (error) {
-      console.error("Failed to load featured shops:", error);
-      if (mounted) {
-        setShops([]);
-        setShopsLoading(false);
-      }
-      return;
-    }
+ if (error) {
+  console.error("Failed to load featured shops:", error);
 
-    if (mounted) {
-      setShops(data ?? []);
-      setShopsLoading(false);
+  if (mounted) {
+    setShops([]);
+    setShopsLoading(false);
+  }
+
+  return;
+}
+
+if (mounted) {
+  const shopsData = data ?? [];
+
+  if (shopsData.length === 0) {
+    setShops([]);
+    setShopsLoading(false);
+    return;
+  }
+
+  const shopIds = shopsData.map((shop) => shop.id);
+
+  const now = new Date();
+
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+
+  const { data: discountData, error: discountError } = await supabase
+    .from("shop_offers")
+    .select(`
+      id,
+      shop_id,
+      title,
+      description,
+      discount_percent
+    `)
+    .in("shop_id", shopIds)
+    .eq("type", "discount")
+    .eq("is_enabled", true)
+    .lte("valid_from", today)
+    .gte("valid_until", today)
+    .not("discount_percent", "is", null)
+    .order("created_at", {
+      ascending: false,
+    });
+
+  if (discountError) {
+    console.error(
+      "HOME SHOP DISCOUNTS FETCH ERROR:",
+      discountError
+    );
+  }
+
+  const discountMap = new Map<
+    string,
+    {
+      id: string;
+      title: string | null;
+      description: string | null;
+      discount_percent: number | null;
     }
+  >();
+
+  (discountData || []).forEach((discount) => {
+    if (!discountMap.has(discount.shop_id)) {
+      discountMap.set(discount.shop_id, {
+        id: discount.id,
+        title: discount.title,
+        description: discount.description,
+        discount_percent: discount.discount_percent,
+      });
+    }
+  });
+
+  const shopsWithDiscounts = shopsData.map((shop) => ({
+    ...shop,
+    activeDiscount: discountMap.get(shop.id) ?? null,
+  }));
+
+  setShops(shopsWithDiscounts);
+  setShopsLoading(false);
+}
   };
 
   loadFeaturedShops();
@@ -408,6 +484,33 @@ useEffect(() => {
   };
 }, [supabase]);
 
+useEffect(() => {
+  const loadSearchShops = async () => {
+    const { data, error } = await supabase
+      .from("shops")
+      .select(`
+        id,
+        name,
+        slug,
+        category,
+        address
+      `)
+      .eq("is_active", true)
+      .order("name", {
+        ascending: true,
+      });
+
+    if (error) {
+      console.error("Failed to load search shops:", error);
+      return;
+    }
+
+    setSearchShops(data ?? []);
+  };
+
+  loadSearchShops();
+}, [supabase]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setActiveSlide((current) => (current + 1) % heroSlides.length);
@@ -415,6 +518,20 @@ useEffect(() => {
 
     return () => clearInterval(timer);
   }, []);
+
+  const searchSuggestions = searchQuery.trim()
+  ? searchShops
+      .filter((shop) => {
+        const query = searchQuery.trim().toLowerCase();
+
+        return (
+          shop.name?.toLowerCase().includes(query) ||
+          shop.category?.toLowerCase().includes(query) ||
+          shop.address?.toLowerCase().includes(query)
+        );
+      })
+      .slice(0, 6)
+  : [];
 
   const slide = heroSlides[activeSlide];
 
@@ -514,43 +631,174 @@ useEffect(() => {
         </div>
       </header>
 
-      {/* SEARCH BAR */}
+    {/* SEARCH BAR */}
 
-      <div className="border-b border-black/[0.06] bg-[#f5f6f4]">
-        <div className="mx-auto max-w-[1400px] px-5 py-2.5 sm:px-8 sm:py-3 lg:px-10">
+<div className="border-b border-black/[0.06] bg-[#f5f6f4]">
+  <div className="mx-auto max-w-[1400px] px-5 py-2.5 sm:px-8 sm:py-3 lg:px-10">
 
-          <div className="mx-auto flex w-full max-w-[900px] items-center gap-1.5 rounded-[15px] bg-white p-1.5 shadow-[0_8px_30px_rgba(0,0,0,.06)]">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
 
-            <div className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-[11px] px-3.5 text-black sm:h-11">
+        const query = searchQuery.trim();
 
-              <svg
-                width="17"
-                height="17"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              >
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-4-4" />
-              </svg>
+        if (!query) {
+          router.push("/all-shops");
+          return;
+        }
 
-              <input
-                placeholder="Search shops or products"
-                className="min-w-0 w-full bg-transparent text-[11px] font-medium outline-none placeholder:text-black/35 sm:text-[12px]"
-              />
+        router.push(
+          `/all-shops?search=${encodeURIComponent(query)}`
+        );
+      }}
+    className="relative mx-auto flex w-full max-w-[900px] items-center gap-1.5 rounded-[15px] bg-white p-1.5 shadow-[0_8px_30px_rgba(0,0,0,.06)]"
+    >
 
-            </div>
+      <div className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-[11px] px-3.5 text-black sm:h-11">
 
-            <button className="h-10 rounded-[11px] bg-[#159447] px-5 text-[11px] font-bold text-white transition hover:bg-[#0f7d3b] sm:h-11 sm:px-7 sm:text-[12px]">
-              Search
-            </button>
+        <svg
+          width="17"
+          height="17"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-4-4" />
+        </svg>
 
+       <input
+  type="search"
+  value={searchQuery}
+  onChange={(e) => {
+    setSearchQuery(e.target.value);
+    setShowSearchSuggestions(true);
+  }}
+  onFocus={() => {
+    if (searchQuery.trim()) {
+      setShowSearchSuggestions(true);
+    }
+  }}
+  onBlur={() => {
+    setTimeout(() => {
+      setShowSearchSuggestions(false);
+    }, 150);
+  }}
+  placeholder="Search local shops..."
+  aria-label="Search local shops"
+  autoComplete="off"
+ className="min-w-0 w-full bg-transparent text-[11px] font-medium text-black outline-none placeholder:text-black/35 sm:text-[12px] [&::-webkit-search-cancel-button]:appearance-none"
+/>
+
+{searchQuery && (
+  <button
+    type="button"
+    onMouseDown={(e) => e.preventDefault()}
+    onClick={() => {
+      setSearchQuery("");
+      setShowSearchSuggestions(false);
+    }}
+    aria-label="Clear search"
+    className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-black transition hover:bg-black/[0.05]"
+  >
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#111111"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12" />
+      <path d="M18 6 6 18" />
+    </svg>
+  </button>
+)}
+
+       </div>
+
+        {showSearchSuggestions &&
+  searchQuery.trim() &&
+  searchSuggestions.length > 0 && (
+    <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[60] overflow-hidden rounded-[16px] border border-black/[0.07] bg-white shadow-[0_18px_50px_rgba(0,0,0,.10)]">
+      {searchSuggestions.map((shop) => (
+        <button
+          key={shop.id}
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+
+            setSearchQuery(shop.name);
+            setShowSearchSuggestions(false);
+
+            router.push(
+              `/all-shops?search=${encodeURIComponent(shop.name)}`
+            );
+          }}
+          className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-[#f5f6f4]"
+        >
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#eef7ef] text-[#159447]">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 10.5 12 3l9 7.5" />
+              <path d="M5 9.5V21h14V9.5" />
+              <path d="M9 21v-6h6v6" />
+            </svg>
           </div>
 
-        </div>
-      </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12px] font-bold text-black">
+              {shop.name}
+            </div>
+
+            <div className="mt-0.5 truncate text-[10px] text-black/40">
+              {shop.category}
+              {shop.address ? ` • ${shop.address}` : ""}
+            </div>
+          </div>
+
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="shrink-0 text-black/25"
+          >
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </button>
+      ))}
+    </div>
+  )}
+
+      <button
+        type="submit"
+        className="h-10 rounded-[11px] bg-[#159447] px-5 text-[11px] font-bold text-white transition hover:bg-[#0f7d3b] active:scale-[0.98] sm:h-11 sm:px-7 sm:text-[12px]"
+      >
+        Search
+      </button>
+
+    </form>
+
+  </div>
+</div>
 
   {/* ================= HERO SECTION ================= */}
 <section className="border-b border-black/[0.06]">
@@ -841,36 +1089,102 @@ useEffect(() => {
         className="group overflow-hidden rounded-[24px] border border-black/[0.07] bg-[#f7f8f6] transition duration-300 hover:-translate-y-1 hover:shadow-[0_25px_60px_rgba(0,0,0,.08)]"
       >
 
-        <div className="relative h-[235px] overflow-hidden">
+          <div className="relative h-[235px] overflow-hidden">
 
-          <img
-            src={shop.image_url}
-            alt={shop.name}
-            className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
-          />
+  <img
+    src={shop.image_url}
+    alt={shop.name}
+    className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
+  />
 
-          <div className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1.5 text-[9px] font-bold backdrop-blur">
-           
-           <span
-  className={
-    isShopOpen(shop.opening_time, shop.closing_time)
-      ? "text-[#159447]"
-      : "text-red-500"
-  }
->
-  ●
-</span>
-           {" "}
-{isShopOpen(shop.opening_time, shop.closing_time)
-  ? "OPEN NOW"
-  : "CLOSED"}
+  {/* OPEN NOW / CLOSED */}
+
+  <div className="absolute left-4 top-4 z-20 rounded-full bg-white/90 px-3 py-1.5 text-[9px] font-bold backdrop-blur">
+
+    <span
+      className={
+        isShopOpen(shop.opening_time, shop.closing_time)
+          ? "text-[#159447]"
+          : "text-red-500"
+      }
+    >
+      ●
+    </span>
+
+    {" "}
+
+    {isShopOpen(shop.opening_time, shop.closing_time)
+      ? "OPEN NOW"
+      : "CLOSED"}
+
+  </div>
+
+ {/* ACTIVE DISCOUNT */}
+
+{shop.activeDiscount &&
+  shop.activeDiscount.discount_percent !== null && (
+    <div className="absolute right-4 top-4 z-20 max-w-[170px] sm:right-5 sm:top-4 sm:max-w-[190px]">
+
+      <div className="rounded-[14px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_8px_25px_rgba(0,0,0,.20)] backdrop-blur-xl sm:px-3 sm:py-2.5">
+
+        <div className="flex items-center gap-1.5">
+
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
+
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83 2 2 0 0 0-2.83 0l3.35-3.35a2 2 0 0 0 0-2.83Z" />
+              <circle
+                cx="7.5"
+                cy="7.5"
+                r="1"
+              />
+            </svg>
+
           </div>
 
-          <div className="absolute bottom-4 right-4 rounded-full bg-black/80 px-3 py-1.5 text-[10px] font-bold text-white backdrop-blur">
-            ★ {Number(shop.rating ?? 0).toFixed(1)}
-          </div>
+          <span className="text-[7px] font-black uppercase tracking-[0.12em] text-white/70">
+            Special offer
+          </span>
 
         </div>
+
+        <div className="mt-1 text-[19px] font-black leading-none tracking-[-0.05em] sm:text-[21px]">
+          {shop.activeDiscount.discount_percent}% OFF
+        </div>
+
+        {shop.activeDiscount.title && (
+          <div className="mt-1 line-clamp-1 text-[9px] font-black leading-3.5 text-white sm:text-[10px]">
+            {shop.activeDiscount.title}
+          </div>
+        )}
+
+        {shop.activeDiscount.description && (
+          <div className="mt-0.5 line-clamp-1 text-[8px] font-medium leading-3 text-white/60 sm:text-[9px]">
+            {shop.activeDiscount.description}
+          </div>
+        )}
+
+      </div>
+
+    </div>
+  )}
+
+  {/* RATING */}
+
+  <div className="absolute bottom-4 right-4 z-20 rounded-full bg-black/80 px-3 py-1.5 text-[10px] font-bold text-white backdrop-blur">
+    ★ {Number(shop.rating ?? 0).toFixed(1)}
+  </div>
+
+</div>
 
         <div className="p-5">
 
@@ -1095,36 +1409,46 @@ useEffect(() => {
 
       {/* FOOTER */}
 
-      <footer className="border-t border-black/[0.07] bg-white">
+{/* FOOTER */}
 
-        <div className="mx-auto flex max-w-[1400px] flex-col gap-7 px-5 py-8 sm:px-8 lg:px-10 md:flex-row md:items-center md:justify-between">
+<footer className="border-t border-black/[0.07] bg-white">
 
-          <div>
+  <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-5 py-8 sm:px-8 md:flex-row md:items-center md:justify-between">
 
-            <div className="flex items-baseline gap-[5px] text-[17px] font-black tracking-[-0.05em]">
-              <span className="text-[#111]">APNA</span>
-              <span className="text-[#159447]">SHYAMPUR</span>
-            </div>
+    <div>
 
-            <div className="mt-1.5 flex items-center gap-2 text-[8px] font-bold tracking-[0.14em] text-black/55">
-              <span>LOCALS</span>
-              <span className="text-[#159447]">•</span>
-              <span>TRUSTED</span>
-              <span className="text-[#159447]">•</span>
-              <span>FAST</span>
-            </div>
+      <div className="flex items-baseline gap-[5px] text-[16px] font-black tracking-[-0.05em]">
+        <span>APNA</span>
+        <span className="text-[#159447]">
+          SHYAMPUR
+        </span>
+      </div>
 
-          </div>
+      <div className="mt-1.5 flex items-center gap-2 text-[7px] font-bold tracking-[0.14em] text-black/45">
+        <span>LOCALS</span>
+        <span className="text-[#159447]">•</span>
+        <span>TRUSTED</span>
+        <span className="text-[#159447]">•</span>
+        <span>FAST</span>
+      </div>
 
-      <div className="text-[12px] font-semibold tracking-[-0.01em]">
-  <span className="text-black/65">© 2026</span>{" "}
+    </div>
 
-  <span className="text-black/80">PNT</span><span className="text-[#159447]">VERSE</span>
-</div>
+    <div className="text-[11px] font-semibold">
+      <span className="text-black/50">
+        © 2026
+      </span>{" "}
+      <span className="text-black/75">
+        PNT
+      </span>
+      <span className="text-[#159447]">
+        VERSE
+      </span>
+    </div>
 
-        </div>
+  </div>
 
-      </footer>
+</footer>
 
         {/* SIGN IN MODAL */}
 

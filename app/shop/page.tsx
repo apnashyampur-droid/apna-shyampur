@@ -20,6 +20,13 @@ type ShopData = {
   store_image_url: string | null; 
   status: "pending" | "rejected" | "approved"; 
 }; 
+
+type ShopDiscount = {
+  id: string;
+  title: string | null;
+  description: string | null;
+  discount_percent: number | null;
+};
  
 type DashboardStats = { 
   newOrders: number; 
@@ -126,7 +133,9 @@ export default function ShopDashboard() {
   const [shopStatus, setShopStatus] = useState<ShopStatus>("loading"); 
   const [shop, setShop] = useState<ShopData | null>(null); 
   const [stats, setStats] = useState<DashboardStats>(emptyStats); 
-  const [errorMessage, setErrorMessage] = useState(""); 
+  const [errorMessage, setErrorMessage] = useState("");
+const [activeDiscount, setActiveDiscount] =
+  useState<ShopDiscount | null>(null);
  
   const [imageUploading, setImageUploading] = useState(false); 
   const [imageMessage, setImageMessage] = useState(""); 
@@ -290,6 +299,45 @@ const [cropSaving, setCropSaving] = useState(false);
     store_image_url: application.store_image_url || null,
     status: "approved",
   });
+
+  const now = new Date();
+
+const today = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+}).format(now);
+
+const { data: discountData, error: discountError } = await supabase
+  .from("shop_offers")
+  .select(`
+    id,
+    title,
+    description,
+    discount_percent
+  `)
+  .eq("shop_id", shopId)
+  .eq("type", "discount")
+  .eq("is_enabled", true)
+  .lte("valid_from", today)
+  .gte("valid_until", today)
+  .not("discount_percent", "is", null)
+  .order("created_at", {
+    ascending: false,
+  })
+  .limit(1);
+
+if (discountError) {
+  console.error("SHOP DISCOUNT FETCH ERROR:", discountError);
+  setActiveDiscount(null);
+} else {
+  setActiveDiscount(
+    discountData?.[0]
+      ? (discountData[0] as ShopDiscount)
+      : null
+  );
+}
 
   setStats({
     newOrders: 0,
@@ -711,6 +759,53 @@ if (shopStatus === "pending") {
                 </div> 
               </div> 
             )} 
+
+            {activeDiscount &&
+  activeDiscount.discount_percent !== null && (
+   <div className="absolute left-5 top-5 z-20 max-w-[235px] sm:left-7 sm:top-7 sm:max-w-[275px]">
+  <div className="rounded-[18px] border border-white/20 bg-black/45 px-3.5 py-3 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:px-4 sm:py-3.5">
+        
+        <div className="flex items-center gap-1.5">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 3.35 0 0 0 2.83 0l3.35-3.35a2 3.35 0 0 0 2.83 0l3.35-3.35a2 3.35 0 0 0 0-2.83l-3.35-3.35a2 2 0 0 0-2.83 0l-3.35 3.35a2 2 0 0 0 0 2.83Z" />
+              <circle cx="7.5" cy="7.5" r="1" />
+            </svg>
+          </div>
+
+          <span className="text-[7.5px] font-black uppercase tracking-[0.12em] text-white/70 sm:text-[8px]">
+            Special offer
+          </span>
+        </div>
+
+       <div className="mt-2 text-[24px] font-black leading-none tracking-[-0.05em] sm:text-[28px]">
+          {activeDiscount.discount_percent}% OFF
+        </div>
+
+        {activeDiscount.title && (
+         <div className="mt-1.5 line-clamp-1 text-[10px] font-black leading-4 text-white sm:text-[12px]">
+            {activeDiscount.title}
+          </div>
+        )}
+
+        {activeDiscount.description && (
+          <div className="mt-1 line-clamp-2 text-[9px] font-medium leading-4 text-white/60 sm:text-[10px] sm:leading-4">
+            {activeDiscount.description}
+          </div>
+        )}
+
+      </div>
+    </div>
+  )}
  
             {/* ACTIVE BADGE */} 
  
@@ -802,8 +897,6 @@ if (shopStatus === "pending") {
 </section>
  
       {/* QUICK ACTIONS */} 
- 
-{/* QUICK ACTIONS */}
 
 <section className="mt-8">
   <SectionHeading
@@ -957,11 +1050,21 @@ if (shopStatus === "pending") {
  
         {/* FOOTER */} 
  
-        <div className="pb-8 pt-10 text-center"> 
-          <div className="text-[9px] font-semibold text-black/25"> 
-            Apna Shyampur · Shop Management 
-          </div> 
-        </div> 
+{/* FOOTER */}
+
+<div className="pb-8 pt-8 text-center">
+  <div className="text-[11px] font-semibold">
+    <span className="text-black/50">
+      © 2026
+    </span>{" "}
+    <span className="text-black/75">
+      PNT
+    </span>
+    <span className="text-[#159447]">
+      VERSE
+    </span>
+  </div>
+</div>
       </section> 
  
       {cropImageSrc && ( 

@@ -36,6 +36,20 @@ type Review = {
   } | null;
 };
 
+type ShopOffer = {
+  id: string;
+  type: "discount" | "combo" | "offer";
+  title: string;
+  description: string | null;
+  discount_percent: number | null;
+  offer_price: number | null;
+  original_price: number | null;
+  product_ids: string[] | null;
+  valid_from: string;
+  valid_until: string;
+  is_enabled: boolean;
+};
+
 function distanceInKm(
   lat1: number,
   lon1: number,
@@ -254,6 +268,14 @@ export default function ViewShopPage() {
 
   const [reviewMessage, setReviewMessage] =
     useState("");
+
+      /* OFFERS */
+
+  const [shopOffers, setShopOffers] =
+    useState<ShopOffer[]>([]);
+
+  const [offersLoading, setOffersLoading] =
+    useState(false);
 
   /* USER LOCATION */
 
@@ -535,6 +557,82 @@ useEffect(() => {
   fetchReviews();
 }, [shop?.id]);
 
+  /* FETCH SHOP OFFERS */
+
+  useEffect(() => {
+    if (!shop?.id) {
+      return;
+    }
+
+    const fetchShopOffers = async () => {
+      setOffersLoading(true);
+
+      try {
+        const supabase = createClient();
+
+        const now = new Date();
+
+        const today = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Kolkata",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(now);
+
+        const { data, error } = await supabase
+          .from("shop_offers")
+          .select(
+            `
+              id,
+              type,
+              title,
+              description,
+              discount_percent,
+              offer_price,
+              original_price,
+              product_ids,
+              valid_from,
+              valid_until,
+              is_enabled
+            `
+          )
+          .eq("shop_id", shop.id)
+          .eq("is_enabled", true)
+          .eq("type", "discount")
+          .lte("valid_from", today)
+          .gte("valid_until", today)
+          .order("created_at", {
+            ascending: false,
+          });
+
+        if (error) {
+          console.error(
+            "SHOP OFFERS FETCH ERROR:",
+            error
+          );
+
+          setShopOffers([]);
+          return;
+        }
+
+        setShopOffers(
+          (data ?? []) as ShopOffer[]
+        );
+      } catch (error) {
+        console.error(
+          "UNEXPECTED SHOP OFFERS ERROR:",
+          error
+        );
+
+        setShopOffers([]);
+      } finally {
+        setOffersLoading(false);
+      }
+    };
+
+    fetchShopOffers();
+  }, [shop?.id]);
+
   /* HELPERS */
 
 const myReview = userId
@@ -542,6 +640,13 @@ const myReview = userId
       (review) => review.user_id === userId
     ) ?? null
   : null;
+
+  const activeDiscount =
+  shopOffers.find(
+    (offer) =>
+      offer.type === "discount" &&
+      offer.discount_percent !== null
+  ) ?? null;
 
 const canPostReview =
   !!userId && !myReview;
@@ -738,11 +843,15 @@ const handleSubmitReview = async () => {
     setReviewText(review.review);
     setReviewMessage("");
 
-    window.scrollTo({
-      top: document.body.scrollHeight,
+   setTimeout(() => {
+  document
+    .getElementById("shop-review")
+    ?.scrollIntoView({
       behavior: "smooth",
+      block: "center",
     });
-  };
+}, 0);
+};
 
   /* CANCEL EDIT */
 
@@ -1022,23 +1131,78 @@ const handleSubmitReview = async () => {
 
               <div className="absolute inset-x-0 bottom-0 z-[1] h-[72%] bg-gradient-to-t from-black/85 via-black/45 to-transparent" />
 
-            <div className="absolute right-5 top-5 flex items-center gap-2 rounded-full border border-white/20 bg-white/90 px-3.5 py-2 text-[9px] font-black tracking-[0.03em] shadow-[0_4px_18px_rgba(0,0,0,.15)] backdrop-blur-md sm:right-7 sm:top-7">
+          <div className="absolute left-5 top-5 z-20 flex items-center gap-2 rounded-full border border-white/20 bg-white/90 px-3.5 py-2 text-[9px] font-black tracking-[0.03em] shadow-[0_4px_18px_rgba(0,0,0,.15)] backdrop-blur-md sm:left-7 sm:top-7">
 
-                <span
-                  className={
-                    shopIsOpen
-                      ? "text-[#159447]"
-                      : "text-red-500"
-                  }
-                >
-                  ●
-                </span>
+  <span
+    className={
+      shopIsOpen
+        ? "text-[#159447]"
+        : "text-red-500"
+    }
+  >
+    ●
+  </span>
 
-                {shopIsOpen
-                  ? "OPEN NOW"
-                  : "CLOSED"}
+  {shopIsOpen
+    ? "OPEN NOW"
+    : "CLOSED"}
 
-              </div>
+</div>
+
+              {activeDiscount &&
+  activeDiscount.discount_percent !== null && (
+   <div className="absolute right-5 top-5 z-20 max-w-[290px] sm:right-7 sm:top-7 sm:max-w-[380px]">
+      <div className="rounded-[22px] border border-white/20 bg-black/45 px-4 py-3.5 text-white shadow-[0_10px_35px_rgba(0,0,0,.22)] backdrop-blur-xl sm:px-5 sm:py-4">
+
+        <div className="flex items-center gap-2">
+
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
+
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83l-3.35-3.35a2 2 0 0 0-2.83 0Z" />
+              <circle
+                cx="7.5"
+                cy="7.5"
+                r="1"
+              />
+            </svg>
+
+          </div>
+
+          <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/70">
+            Special offer
+          </span>
+
+        </div>
+
+        <div className="mt-2 text-[25px] font-black leading-none tracking-[-0.05em] sm:text-[30px]">
+          {activeDiscount.discount_percent}% OFF
+        </div>
+
+        {activeDiscount.title && (
+          <div className="mt-2 text-[13px] font-black leading-5 tracking-[-0.01em] text-white sm:text-[15px]">
+            {activeDiscount.title}
+          </div>
+        )}
+
+        {activeDiscount.description && (
+          <div className="mt-1 max-w-[330px] text-[10px] font-medium leading-4 text-white/65 sm:text-[11px] sm:leading-5">
+            {activeDiscount.description}
+          </div>
+        )}
+
+      </div>
+    </div>
+  )}
 
               <div className="absolute inset-x-0 bottom-0 z-10 px-5 pb-7 text-white sm:px-8 sm:pb-9">
 
@@ -1753,7 +1917,7 @@ const handleSubmitReview = async () => {
               {!reviewsLoading &&
   !reviewsError &&
   reviews.length > 0 && (
-    <div className="max-h-[520px] space-y-3 overflow-y-auto pr-2 overscroll-contain">
+    <div className="max-h-[520px] space-y-3 overflow-y-auto overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch] pr-0 sm:pr-2">
 
       {reviews.map((review) => {
                       const isMine =
@@ -1902,6 +2066,43 @@ const handleSubmitReview = async () => {
             </button>
 
           </div>
+
+{/* FOOTER */}
+
+<footer className="mt-5 border-t border-black/[0.07] bg-white">
+  <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-5 py-8 sm:px-8 md:flex-row md:items-center md:justify-between">
+
+    <div>
+      <div className="flex items-baseline gap-[5px] text-[16px] font-black tracking-[-0.05em]">
+        <span>APNA</span>
+        <span className="text-[#159447]">
+          SHYAMPUR
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex items-center gap-2 text-[7px] font-bold tracking-[0.14em] text-black/45">
+        <span>LOCALS</span>
+        <span className="text-[#159447]">•</span>
+        <span>TRUSTED</span>
+        <span className="text-[#159447]">•</span>
+        <span>FAST</span>
+      </div>
+    </div>
+
+    <div className="text-[11px] font-semibold">
+      <span className="text-black/50">
+        © 2026
+      </span>{" "}
+      <span className="text-black/75">
+        PNT
+      </span>
+      <span className="text-[#159447]">
+        VERSE
+      </span>
+    </div>
+
+  </div>
+</footer>
 
         </section>
       )}

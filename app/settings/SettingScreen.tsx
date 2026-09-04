@@ -568,17 +568,35 @@ export default function SettingScreen() {
 
         </div>
 
-        {/* APP INFO */}
+      </section>
 
-        <div className="mt-8 text-center">
+      {/* FOOTER */}
 
-          <div className="text-[9px] font-semibold text-black/30">
-            Apna Shyampur
+      <footer className="border-t border-black/[0.07] bg-white">
+        <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-5 py-8 sm:px-8 md:flex-row md:items-center md:justify-between">
+
+          <div>
+            <div className="flex items-baseline gap-[5px] text-[16px] font-black tracking-[-0.05em]">
+              <span>APNA</span>
+              <span className="text-[#159447]">
+                SHYAMPUR
+              </span>
+            </div>
+
+            <div className="mt-1.5 flex items-center gap-2 text-[7px] font-bold tracking-[0.14em] text-black/45">
+              <span>LOCALS</span>
+              <span className="text-[#159447]">•</span>
+              <span>TRUSTED</span>
+              <span className="text-[#159447]">•</span>
+              <span>FAST</span>
+            </div>
           </div>
 
-          <div className="mt-1 text-[9px] font-semibold text-black/25">
-            © 2026{" "}
-            <span className="text-black/45">
+          <div className="text-[11px] font-semibold">
+            <span className="text-black/50">
+              © 2026
+            </span>{" "}
+            <span className="text-black/75">
               PNT
             </span>
             <span className="text-[#159447]">
@@ -587,8 +605,7 @@ export default function SettingScreen() {
           </div>
 
         </div>
-
-      </section>
+      </footer>
 
             {/* LOGOUT CONFIRMATION */}
 

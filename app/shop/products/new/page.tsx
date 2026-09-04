@@ -1045,9 +1045,26 @@ if (!price.trim()) {
                 </>
               )}
             </button>
-          </div>
+                    </div>
         </form>
       </section>
+
+      {/* FOOTER */}
+
+      <div className="pb-8 pt-10 text-center">
+        <div className="text-[11px] font-semibold">
+          <span className="text-black/50">
+            © 2026
+          </span>{" "}
+          <span className="text-black/75">
+            PNT
+          </span>
+          <span className="text-[#159447]">
+            VERSE
+          </span>
+        </div>
+      </div>
+      
       {cropOpen && cropImage && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
           <div className="flex h-[min(720px,92vh)] w-full max-w-[760px] flex-col overflow-hidden rounded-[26px] bg-white shadow-[0_30px_100px_rgba(0,0,0,.3)]">

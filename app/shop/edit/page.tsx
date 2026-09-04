@@ -1678,11 +1678,21 @@ export default function EditShopPage() {
           publicly on your shop.
         </div>
 
-        <div className="pb-8 pt-8 text-center">
-          <div className="text-[8.5px] font-semibold text-black/25">
-            Apna Shyampur · Shop Management
-          </div>
-        </div>
+      {/* FOOTER */}
+
+<div className="pb-8 pt-8 text-center">
+  <div className="text-[11px] font-semibold">
+    <span className="text-black/50">
+      © 2026
+    </span>{" "}
+    <span className="text-black/75">
+      PNT
+    </span>
+    <span className="text-[#159447]">
+      VERSE
+    </span>
+  </div>
+</div>
       </section>
 
       {/* =====================================================

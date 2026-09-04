@@ -4,21 +4,29 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+type ShopDiscount = {
+  id: string;
+  title: string | null;
+  description: string | null;
+  discount_percent: number | null;
+};
+
 type Shop = {
   id: string;
   name: string;
   slug: string;
   owner_name: string | null;
-address: string | null;
+  address: string | null;
   category: string;
   image_url: string | null;
   rating: number | null;
   latitude: number | null;
   longitude: number | null;
   opening_time: string;
-closing_time: string;
+  closing_time: string;
   is_active: boolean;
   created_at: string;
+  activeDiscount: ShopDiscount | null;
 };
 
 const categoryMap: Record<string, string[]> = {
@@ -104,8 +112,6 @@ function isShopOpen(
   const closingMinutes =
     closeHour * 60 + closeMinute;
 
-  // Normal same-day timing
-  // Example: 08:00 → 23:00
   if (openingMinutes < closingMinutes) {
     return (
       currentMinutes >= openingMinutes &&
@@ -128,11 +134,17 @@ function isShopOpen(
   const searchParams = useSearchParams();
 
   const selectedCategory = searchParams.get("category");
+const urlSearchQuery = searchParams.get("search") || "";
 
   const [shops, setShops] = useState<Shop[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(urlSearchQuery);
+const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+
+  useEffect(() => {
+  setSearchQuery(urlSearchQuery);
+}, [urlSearchQuery]);
 
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
@@ -207,7 +219,71 @@ function isShopOpen(
           return;
         }
 
-        setShops(data || []);
+        const shopsData = (data || []) as Omit<Shop, "activeDiscount">[];
+
+if (shopsData.length === 0) {
+  setShops([]);
+  return;
+}
+
+const shopIds = shopsData.map((shop) => shop.id);
+
+const now = new Date();
+
+const today = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+}).format(now);
+
+const { data: discountData, error: discountError } = await supabase
+  .from("shop_offers")
+  .select(`
+    id,
+    shop_id,
+    title,
+    description,
+    discount_percent
+  `)
+  .in("shop_id", shopIds)
+  .eq("type", "discount")
+  .eq("is_enabled", true)
+  .lte("valid_from", today)
+  .gte("valid_until", today)
+  .not("discount_percent", "is", null)
+  .order("created_at", {
+    ascending: false,
+  });
+
+if (discountError) {
+  console.error(
+    "SHOP DISCOUNTS FETCH ERROR:",
+    discountError
+  );
+}
+
+const discountMap = new Map<string, ShopDiscount>();
+
+(discountData || []).forEach((discount) => {
+  if (!discountMap.has(discount.shop_id)) {
+    discountMap.set(discount.shop_id, {
+      id: discount.id,
+      title: discount.title,
+      description: discount.description,
+      discount_percent: discount.discount_percent,
+    });
+  }
+});
+
+const shopsWithDiscounts = shopsData.map((shop) => ({
+  ...shop,
+  activeDiscount:
+    discountMap.get(shop.id) ?? null,
+}));
+
+setShops(shopsWithDiscounts);
+
       } catch (error) {
         console.error("UNEXPECTED SHOPS ERROR:", error);
 
@@ -244,11 +320,27 @@ function isShopOpen(
 
   const matchesSearch = query
     ? shop.name.toLowerCase().includes(query) ||
-      shop.category.toLowerCase().includes(query)
+      shop.category.toLowerCase().includes(query) ||
+      (shop.owner_name ?? "").toLowerCase().includes(query) ||
+      (shop.address ?? "").toLowerCase().includes(query)
     : true;
 
   return matchesCategory && matchesSearch;
 });
+
+const searchSuggestions = searchQuery.trim()
+  ? shops
+      .filter((shop) => {
+        const query = searchQuery.trim().toLowerCase();
+
+        return (
+          shop.name?.toLowerCase().includes(query) ||
+          shop.category?.toLowerCase().includes(query) ||
+          shop.address?.toLowerCase().includes(query)
+        );
+      })
+      .slice(0, 6)
+  : [];
 
   const pageTitle = selectedCategory
   ? `${selectedCategory} Shops`
@@ -306,43 +398,140 @@ const pageDescription = selectedCategory
       <section className="mx-auto max-w-[1400px] px-5 py-7 sm:px-8 sm:py-9 lg:px-10">
   {/* SEARCH */}
 
-  <div className="mb-7">
-    <div className="relative w-full max-w-[620px]">
-      <svg
-        className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-black/35"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+ <div className="mb-7">
+  <div className="relative w-full max-w-[620px]">
+    <svg
+      className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-black/35"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-4-4" />
+    </svg>
+
+    <input
+      type="search"
+      value={searchQuery}
+      onChange={(event) => {
+        setSearchQuery(event.target.value);
+        setShowSearchSuggestions(true);
+      }}
+      onFocus={() => {
+        if (searchQuery.trim()) {
+          setShowSearchSuggestions(true);
+        }
+      }}
+      onBlur={() => {
+        setTimeout(() => {
+          setShowSearchSuggestions(false);
+        }, 150);
+      }}
+      placeholder="Search local shops..."
+      aria-label="Search local shops"
+      autoComplete="off"
+      className="h-[48px] w-full rounded-[15px] border border-black/[0.08] bg-white pl-11 pr-11 text-[12px] font-semibold text-black outline-none shadow-[0_8px_25px_rgba(0,0,0,.025)] transition placeholder:text-black/30 focus:border-[#159447]/30 focus:ring-2 focus:ring-[#159447]/10 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
+    />
+
+    {searchQuery && (
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          setSearchQuery("");
+          setShowSearchSuggestions(false);
+        }}
+        className="absolute right-3 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-black transition hover:bg-black/[0.05]"
+        aria-label="Clear search"
       >
-        <circle cx="11" cy="11" r="7" />
-        <path d="m20 20-4-4" />
-      </svg>
-
-      <input
-        type="search"
-        value={searchQuery}
-        onChange={(event) => setSearchQuery(event.target.value)}
-        placeholder="Search shops..."
-        className="h-[48px] w-full rounded-[15px] border border-black/[0.08] bg-white pl-11 pr-11 text-[12px] font-semibold text-black outline-none shadow-[0_8px_25px_rgba(0,0,0,.025)] transition placeholder:text-black/30 focus:border-[#159447]/30 focus:ring-2 focus:ring-[#159447]/10"
-      />
-
-      {searchQuery && (
-        <button
-          type="button"
-          onClick={() => setSearchQuery("")}
-          className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.05] hover:text-black"
-          aria-label="Clear search"
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#111111"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          aria-hidden="true"
         >
-          ×
-        </button>
+          <path d="M6 6l12 12" />
+          <path d="M18 6 6 18" />
+        </svg>
+      </button>
+    )}
+
+    {showSearchSuggestions &&
+      searchQuery.trim() &&
+      searchSuggestions.length > 0 && (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[60] overflow-hidden rounded-[16px] border border-black/[0.07] bg-white shadow-[0_18px_50px_rgba(0,0,0,.10)]">
+          {searchSuggestions.map((shop) => (
+            <button
+              key={shop.id}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+
+                setSearchQuery(shop.name);
+                setShowSearchSuggestions(false);
+
+                router.push(
+                  `/all-shops?search=${encodeURIComponent(shop.name)}`
+                );
+              }}
+              className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-[#f5f6f4]"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#eef7ef] text-[#159447]">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 10.5 12 3l9 7.5" />
+                  <path d="M5 9.5V21h14V9.5" />
+                  <path d="M9 21v-6h6v6" />
+                </svg>
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[12px] font-bold text-black">
+                  {shop.name}
+                </div>
+
+                <div className="mt-0.5 truncate text-[10px] text-black/40">
+                  {shop.category}
+                  {shop.address ? ` • ${shop.address}` : ""}
+                </div>
+              </div>
+
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="shrink-0 text-black/25"
+              >
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          ))}
+        </div>
       )}
-    </div>
   </div>
+</div>
 
   {/* TITLE */}
 
@@ -534,7 +723,9 @@ const pageDescription = selectedCategory
 
                       {/* OPEN / CLOSED */}
 
-                      <div className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1.5 text-[9px] font-bold backdrop-blur">
+                  {/* OPEN / CLOSED */}
+
+<div className="absolute left-4 top-4 z-20 rounded-full bg-white/90 px-3 py-1.5 text-[9px] font-bold backdrop-blur">
   <span
     className={
       shopIsOpen
@@ -546,6 +737,59 @@ const pageDescription = selectedCategory
   </span>{" "}
   {shopIsOpen ? "OPEN NOW" : "CLOSED"}
 </div>
+
+{/* ACTIVE DISCOUNT */}
+
+{shop.activeDiscount &&
+  shop.activeDiscount.discount_percent !== null && (
+<div className="absolute right-4 top-4 z-20 max-w-[170px] sm:right-5 sm:top-4 sm:max-w-[190px]">
+      <div className="rounded-[14px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_8px_25px_rgba(0,0,0,.20)] backdrop-blur-xl sm:px-3 sm:py-2.5">
+
+        <div className="flex items-center gap-1.5">
+
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
+
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83Z" />
+              <circle cx="7.5" cy="7.5" r="1" />
+            </svg>
+
+          </div>
+
+          <span className="text-[7px] font-black uppercase tracking-[0.12em] text-white/70">
+            Special offer
+          </span>
+
+        </div>
+
+        <div className="mt-1 text-[19px] font-black leading-none tracking-[-0.05em] sm:text-[21px]">
+          {shop.activeDiscount.discount_percent}% OFF
+        </div>
+
+        {shop.activeDiscount.title && (
+          <div className="mt-1 line-clamp-1 text-[9px] font-black leading-3.5 text-white sm:text-[10px]">
+            {shop.activeDiscount.title}
+          </div>
+        )}
+
+        {shop.activeDiscount.description && (
+          <div className="mt-0.5 line-clamp-1 text-[8px] font-medium leading-3 text-white/60 sm:text-[9px]">
+            {shop.activeDiscount.description}
+          </div>
+        )}
+
+      </div>
+    </div>
+  )}
 
                       {/* RATING */}
 
@@ -660,12 +904,50 @@ const pageDescription = selectedCategory
               })}
             </div>
           )}
-      </section>
+           </section>
+
+      {/* FOOTER */}
+
+      <footer className="border-t border-black/[0.07] bg-white">
+        <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-5 py-8 sm:px-8 md:flex-row md:items-center md:justify-between">
+
+          <div>
+            <div className="flex items-baseline gap-[5px] text-[16px] font-black tracking-[-0.05em]">
+              <span>APNA</span>
+              <span className="text-[#159447]">
+                SHYAMPUR
+              </span>
+            </div>
+
+            <div className="mt-1.5 flex items-center gap-2 text-[7px] font-bold tracking-[0.14em] text-black/45">
+              <span>LOCALS</span>
+              <span className="text-[#159447]">•</span>
+              <span>TRUSTED</span>
+              <span className="text-[#159447]">•</span>
+              <span>FAST</span>
+            </div>
+          </div>
+
+          <div className="text-[11px] font-semibold">
+            <span className="text-black/50">
+              © 2026
+            </span>{" "}
+            <span className="text-black/75">
+              PNT
+            </span>
+            <span className="text-[#159447]">
+              VERSE
+            </span>
+          </div>
+
+        </div>
+      </footer>
     </main>
   );
 }
 
 export default function AllShops() {
+
   return (
     <Suspense
       fallback={

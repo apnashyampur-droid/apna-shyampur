@@ -797,9 +797,10 @@ if (shopStatus === "pending") {
         )}
 
         {activeDiscount.description && (
-        <div className="mt-0.5 line-clamp-2 text-[7.5px] font-medium leading-3 text-white/60 sm:mt-1 sm:text-[10px] sm:leading-4">
-          </div>
-        )}
+  <div className="mt-0.5 line-clamp-2 text-[7.5px] font-medium leading-3 text-white/60 sm:mt-1 sm:text-[10px] sm:leading-4">
+    {activeDiscount.description}
+  </div>
+)}
 
       </div>
     </div>

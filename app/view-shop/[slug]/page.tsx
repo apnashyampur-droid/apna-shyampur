@@ -1151,8 +1151,8 @@ const handleSubmitReview = async () => {
 
               {activeDiscount &&
   activeDiscount.discount_percent !== null && (
-   <div className="absolute right-4 top-4 z-20 w-[calc(100%-2rem)] max-w-[230px] sm:right-7 sm:top-7 sm:w-auto sm:max-w-[380px]">
-  <div className="rounded-[18px] border border-white/20 bg-black/45 px-3.5 py-3 text-white shadow-[0_10px_35px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[22px] sm:px-5 sm:py-4">
+  <div className="absolute right-3.5 top-3.5 z-20 w-[185px] sm:right-7 sm:top-7 sm:w-auto sm:max-w-[280px]">
+  <div className="rounded-[15px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
         <div className="flex items-center gap-2">
 
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
@@ -1183,18 +1183,18 @@ const handleSubmitReview = async () => {
 
         </div>
 
-        <div className="mt-1.5 text-[21px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[30px]">
+        <div className="mt-1 text-[18px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[26px]">
           {activeDiscount.discount_percent}% OFF
         </div>
 
         {activeDiscount.title && (
-          <div className="mt-1.5 text-[11px] font-black leading-4 tracking-[-0.01em] text-white sm:mt-2 sm:text-[15px] sm:leading-5">
+          <div className="mt-1 text-[9px] font-black leading-3.5 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
             {activeDiscount.title}
           </div>
         )}
 
         {activeDiscount.description && (
-        <div className="mt-1 max-w-[210px] text-[9px] font-medium leading-3.5 text-white/65 sm:max-w-[330px] sm:text-[11px] sm:leading-5">
+        <div className="mt-0.5 max-w-[165px] text-[8px] font-medium leading-3 text-white/65 sm:mt-1 sm:max-w-[240px] sm:text-[10px] sm:leading-4">
             {activeDiscount.description}
           </div>
         )}

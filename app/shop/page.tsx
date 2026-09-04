@@ -762,9 +762,8 @@ if (shopStatus === "pending") {
 
             {activeDiscount &&
   activeDiscount.discount_percent !== null && (
-   <div className="absolute left-5 top-5 z-20 max-w-[235px] sm:left-7 sm:top-7 sm:max-w-[275px]">
-  <div className="rounded-[18px] border border-white/20 bg-black/45 px-3.5 py-3 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:px-4 sm:py-3.5">
-        
+  <div className="absolute left-3.5 top-3.5 z-20 w-[165px] sm:left-7 sm:top-7 sm:w-auto sm:max-w-[275px]">
+  <div className="rounded-[14px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
         <div className="flex items-center gap-1.5">
           <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
             <svg
@@ -787,19 +786,18 @@ if (shopStatus === "pending") {
           </span>
         </div>
 
-       <div className="mt-2 text-[24px] font-black leading-none tracking-[-0.05em] sm:text-[28px]">
+       <div className="mt-1 text-[18px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[28px]">
           {activeDiscount.discount_percent}% OFF
         </div>
 
         {activeDiscount.title && (
-         <div className="mt-1.5 line-clamp-1 text-[10px] font-black leading-4 text-white sm:text-[12px]">
+         <div className="mt-1 line-clamp-1 text-[8.5px] font-black leading-3.5 text-white sm:mt-1.5 sm:text-[12px] sm:leading-4">
             {activeDiscount.title}
           </div>
         )}
 
         {activeDiscount.description && (
-          <div className="mt-1 line-clamp-2 text-[9px] font-medium leading-4 text-white/60 sm:text-[10px] sm:leading-4">
-            {activeDiscount.description}
+        <div className="mt-0.5 line-clamp-2 text-[7.5px] font-medium leading-3 text-white/60 sm:mt-1 sm:text-[10px] sm:leading-4">
           </div>
         )}
 

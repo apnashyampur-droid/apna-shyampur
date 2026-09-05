@@ -564,19 +564,18 @@ const filteredCombos = useMemo(() => {
 
             <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/20 to-black/5" />
 
-<div className="absolute right-3.5 top-3.5 z-20 flex w-[185px] flex-col items-end gap-1.5 sm:right-7 sm:top-7 sm:w-auto">
+<div className="absolute right-2.5 top-2.5 z-20 flex w-[145px] flex-col items-end gap-1 sm:right-7 sm:top-7 sm:w-auto sm:gap-1.5">
 
   {shop.activeDiscount &&
     shop.activeDiscount.discount_percent !== null && (
       <div className="w-full sm:w-auto sm:max-w-[280px]">
-        <div className="rounded-[15px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
-
+  <div className="rounded-[12px] border border-white/20 bg-black/45 px-2 py-1.5 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
           <div className="flex items-center gap-1.5">
 
-            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
+           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white sm:h-7 sm:w-7">
               <svg
-                width="10"
-                height="10"
+                width="9"
+                height="9"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"

@@ -1166,23 +1166,24 @@ const handleSubmitReview = async () => {
 
                             {/* HERO OFFERS */}
 
-              <div className="absolute right-3.5 top-3.5 z-20 flex w-[185px] flex-col items-end gap-1.5 sm:right-7 sm:top-7 sm:w-auto">
+             <div className="absolute right-2.5 top-2.5 z-20 flex w-[145px] flex-col items-end gap-1 sm:right-7 sm:top-7 sm:w-auto sm:gap-1.5">
 
                 {/* ACTIVE DISCOUNT */}
 
                 {activeDiscount &&
                   activeDiscount.discount_percent !== null && (
+                   
                     <div className="w-full sm:w-auto sm:max-w-[280px]">
 
-                      <div className="rounded-[15px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
+  <div className="rounded-[12px] border border-white/20 bg-black/45 px-2 py-1.5 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
 
                         <div className="flex items-center gap-2">
 
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
+                       <div className="flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white sm:h-7 sm:w-7">
 
                             <svg
-                              width="14"
-                              height="14"
+                              width="11"
+                              height="11"
                               viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
@@ -1208,18 +1209,18 @@ const handleSubmitReview = async () => {
 
                         </div>
 
-                        <div className="mt-1 text-[18px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[26px]">
+                       <div className="mt-0.5 text-[15px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[26px]">
                           {activeDiscount.discount_percent}% OFF
                         </div>
 
                         {activeDiscount.title && (
-                          <div className="mt-1 text-[9px] font-black leading-3.5 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
+                         <div className="mt-0.5 line-clamp-1 text-[8px] font-black leading-3 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
                             {activeDiscount.title}
                           </div>
                         )}
 
                         {activeDiscount.description && (
-                          <div className="mt-0.5 max-w-[165px] text-[8px] font-medium leading-3 text-white/65 sm:mt-1 sm:max-w-[240px] sm:text-[10px] sm:leading-4">
+                          <div className="mt-0.5 max-w-[125px] line-clamp-1 text-[7px] font-medium leading-2.5 text-white/65 sm:mt-1 sm:max-w-[240px] sm:text-[10px] sm:leading-4">
                             {activeDiscount.description}
                           </div>
                         )}
@@ -1232,10 +1233,10 @@ const handleSubmitReview = async () => {
                 {/* ACTIVE OFFER */}
 
                 {activeOffer && (
-                  <div className="w-[155px] sm:w-[175px]">
+               
+               <div className="w-[125px] sm:w-[175px]">
 
-                    <div className="rounded-[13px] border border-white/20 bg-white/92 px-2.5 py-2 text-black shadow-[0_8px_25px_rgba(0,0,0,.14)] backdrop-blur-xl sm:px-3 sm:py-2.5">
-
+  <div className="rounded-[11px] border border-white/20 bg-white/92 px-2 py-1.5 text-black shadow-[0_8px_25px_rgba(0,0,0,.14)] backdrop-blur-xl sm:px-3 sm:py-2.5">
                       <div className="flex items-center gap-2">
 
                         <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
@@ -1290,17 +1291,18 @@ const handleSubmitReview = async () => {
                         </div>
                       )}
 
-                     {activeOffer.title && (
-  <div className="mt-1 text-[8.5px] font-black leading-3.5 text-black sm:text-[9px]">
+                   {activeOffer.title && (
+  <div className="mt-0.5 line-clamp-1 text-[7.5px] font-black leading-3 text-black sm:mt-1 sm:text-[9px] sm:leading-3.5">
     {activeOffer.title}
   </div>
 )}
 
 {activeOffer.description && (
-  <div className="mt-0.5 max-w-[135px] text-[8px] font-medium leading-3 text-black/55 sm:mt-1 sm:max-w-[150px] sm:text-[9px] sm:leading-3.5">
+  <div className="mt-0.5 max-w-[108px] line-clamp-1 text-[7px] font-medium leading-2.5 text-black/55 sm:mt-1 sm:max-w-[150px] sm:text-[9px] sm:leading-3.5">
     {activeOffer.description}
   </div>
 )}
+
                     </div>
 
                   </div>

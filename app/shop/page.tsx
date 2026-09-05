@@ -27,6 +27,16 @@ type ShopDiscount = {
   description: string | null;
   discount_percent: number | null;
 };
+
+type ShopOffer = {
+  id: string;
+  title: string;
+  description: string | null;
+  offer_kind: "flat" | "buy_get" | "free_item" | null;
+  offer_value: number | null;
+  buy_quantity: number | null;
+  get_quantity: number | null;
+};
  
 type DashboardStats = { 
   newOrders: number; 
@@ -136,6 +146,9 @@ export default function ShopDashboard() {
   const [errorMessage, setErrorMessage] = useState("");
 const [activeDiscount, setActiveDiscount] =
   useState<ShopDiscount | null>(null);
+
+const [activeOffer, setActiveOffer] =
+  useState<ShopOffer | null>(null);
  
   const [imageUploading, setImageUploading] = useState(false); 
   const [imageMessage, setImageMessage] = useState(""); 
@@ -335,6 +348,38 @@ if (discountError) {
   setActiveDiscount(
     discountData?.[0]
       ? (discountData[0] as ShopDiscount)
+      : null
+  );
+}
+
+const { data: offerData, error: offerError } = await supabase
+  .from("shop_offers")
+  .select(`
+    id,
+    title,
+    description,
+    offer_kind,
+    offer_value,
+    buy_quantity,
+    get_quantity
+  `)
+  .eq("shop_id", shopId)
+  .eq("type", "offer")
+  .eq("is_enabled", true)
+  .lte("valid_from", today)
+  .gte("valid_until", today)
+  .order("created_at", {
+    ascending: false,
+  })
+  .limit(1);
+
+if (offerError) {
+  console.error("SHOP OFFER FETCH ERROR:", offerError);
+  setActiveOffer(null);
+} else {
+  setActiveOffer(
+    offerData?.[0]
+      ? (offerData[0] as ShopOffer)
       : null
   );
 }
@@ -760,52 +805,123 @@ if (shopStatus === "pending") {
               </div> 
             )} 
 
-            {activeDiscount &&
-  activeDiscount.discount_percent !== null && (
-  <div className="absolute left-3.5 top-3.5 z-20 w-[165px] sm:left-7 sm:top-7 sm:w-auto sm:max-w-[275px]">
-  <div className="rounded-[14px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
-        <div className="flex items-center gap-1.5">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 3.35 0 0 0 2.83 0l3.35-3.35a2 3.35 0 0 0 2.83 0l3.35-3.35a2 3.35 0 0 0 0-2.83l-3.35-3.35a2 2 0 0 0-2.83 0l-3.35 3.35a2 2 0 0 0 0 2.83Z" />
-              <circle cx="7.5" cy="7.5" r="1" />
-            </svg>
+{(activeDiscount || activeOffer) && (
+  <div className="absolute left-3.5 top-3.5 z-20 flex w-[205px] flex-col items-start gap-2 sm:left-7 sm:top-7 sm:w-auto">
+    
+    {activeDiscount &&
+      activeDiscount.discount_percent !== null && (
+        <div className="w-[185px] sm:w-auto sm:max-w-[290px]">
+          <div className="rounded-[15px] border border-white/20 bg-black/45 px-3 py-2.5 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[19px] sm:px-4.5 sm:py-4">
+            
+            <div className="flex items-center gap-1.5">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white sm:h-7 sm:w-7">
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83l-3.35-3.35a2 2 0 0 0-2.83 0l-3.35 3.35a2 2 0 0 0 0 2.83Z" />
+                  <circle cx="7.5" cy="7.5" r="1" />
+                </svg>
+              </div>
+
+              <span className="text-[7.5px] font-black uppercase tracking-[0.12em] text-white/70 sm:text-[8px]">
+                Special offer
+              </span>
+            </div>
+
+            <div className="mt-1.5 text-[19px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[29px]">
+              {activeDiscount.discount_percent}% OFF
+            </div>
+
+            {activeDiscount.title && (
+              <div className="mt-1 line-clamp-1 text-[9px] font-black leading-4 text-white sm:mt-1.5 sm:text-[12px] sm:leading-4">
+                {activeDiscount.title}
+              </div>
+            )}
+
+            {activeDiscount.description && (
+              <div className="mt-0.5 line-clamp-2 text-[8px] font-medium leading-3 text-white/60 sm:mt-1 sm:text-[10px] sm:leading-4">
+                {activeDiscount.description}
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+    {activeOffer && (
+      <div className="w-[175px] sm:w-[205px]">
+        <div className="rounded-[15px] border border-white/20 bg-white/92 px-3 py-2.5 text-black shadow-[0_10px_30px_rgba(0,0,0,.14)] backdrop-blur-xl sm:rounded-[17px] sm:px-4 sm:py-3">
+          
+          <div className="flex items-center gap-2">
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white sm:h-7 sm:w-7">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83l3.35-3.35a2 2 0 0 0 0-2.83Z" />
+                <circle cx="7.5" cy="7.5" r="1" />
+              </svg>
+            </div>
+
+            <span className="text-[8px] font-black uppercase tracking-[0.11em] text-[#159447] sm:text-[8.5px]">
+              Special Deal
+            </span>
           </div>
 
-          <span className="text-[7.5px] font-black uppercase tracking-[0.12em] text-white/70 sm:text-[8px]">
-            Special offer
-          </span>
+          {activeOffer.offer_kind === "flat" &&
+            activeOffer.offer_value !== null && (
+              <div className="mt-1.5 text-[17px] font-black leading-none tracking-[-0.04em] sm:mt-2 sm:text-[21px]">
+                ₹{activeOffer.offer_value} OFF
+              </div>
+            )}
+
+          {activeOffer.offer_kind === "buy_get" &&
+            activeOffer.buy_quantity !== null &&
+            activeOffer.get_quantity !== null && (
+              <div className="mt-1.5 text-[13px] font-black leading-4 sm:mt-2 sm:text-[15px]">
+                BUY {activeOffer.buy_quantity} GET{" "}
+                {activeOffer.get_quantity}
+              </div>
+            )}
+
+          {activeOffer.offer_kind === "free_item" && (
+            <div className="mt-1.5 text-[13px] font-black leading-4 sm:mt-2 sm:text-[15px]">
+              FREE ITEM
+            </div>
+          )}
+
+          {activeOffer.title && (
+            <div className="mt-1 line-clamp-1 text-[9px] font-bold leading-4 text-black/55 sm:mt-1.5 sm:text-[10px]">
+              {activeOffer.title}
+            </div>
+          )}
+
+          {activeOffer.description && (
+            <div className="mt-0.5 line-clamp-2 text-[8px] font-medium leading-3.5 text-black/40 sm:mt-1 sm:text-[9px] sm:leading-4">
+              {activeOffer.description}
+            </div>
+          )}
+
         </div>
+      </div>
+    )}
 
-       <div className="mt-1 text-[18px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[28px]">
-          {activeDiscount.discount_percent}% OFF
-        </div>
-
-        {activeDiscount.title && (
-         <div className="mt-1 line-clamp-1 text-[8.5px] font-black leading-3.5 text-white sm:mt-1.5 sm:text-[12px] sm:leading-4">
-            {activeDiscount.title}
-          </div>
-        )}
-
-        {activeDiscount.description && (
-  <div className="mt-0.5 line-clamp-2 text-[7.5px] font-medium leading-3 text-white/60 sm:mt-1 sm:text-[10px] sm:leading-4">
-    {activeDiscount.description}
   </div>
 )}
 
-      </div>
-    </div>
-  )}
- 
             {/* ACTIVE BADGE */} 
  
             <div className="absolute right-4 top-4"> 

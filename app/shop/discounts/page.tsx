@@ -21,6 +21,12 @@ type Offer = {
   type: OfferType;
   title: string;
   description: string;
+  offerKind?: "flat" | "buy_get" | "free_item";
+  offerValue?: number;
+  minimumOrderValue?: number;
+  buyQuantity?: number;
+  getQuantity?: number;
+  rewardProductId?: string;
   discountPercent?: number;
   offerPrice?: number;
   originalPrice?: number;
@@ -44,10 +50,19 @@ type OfferRow = {
   type: OfferType;
   title: string;
   description: string | null;
+
+  offer_kind: "flat" | "buy_get" | "free_item" | null;
+  offer_value: number | null;
+  minimum_order_value: number | null;
+  buy_quantity: number | null;
+  get_quantity: number | null;
+  reward_product_id: string | null;
+
   discount_percent: number | null;
   offer_price: number | null;
   original_price: number | null;
   product_ids: string[] | null;
+
   valid_from: string;
   valid_until: string;
   is_enabled: boolean;
@@ -147,26 +162,55 @@ function mapOffer(row: OfferRow): Offer {
   return {
     id: row.id,
     type: row.type,
+
     title: row.title,
+
     description:
       row.description ||
       "Special offer for customers.",
+
+    offerKind:
+      row.offer_kind ?? undefined,
+
+    offerValue:
+      row.offer_value ?? undefined,
+
+    minimumOrderValue:
+      row.minimum_order_value ?? undefined,
+
+    buyQuantity:
+      row.buy_quantity ?? undefined,
+
+    getQuantity:
+      row.get_quantity ?? undefined,
+
+    rewardProductId:
+      row.reward_product_id ?? undefined,
+
     discountPercent:
       row.discount_percent ?? undefined,
+
     offerPrice:
       row.offer_price ?? undefined,
+
     originalPrice:
       row.original_price ?? undefined,
+
     productIds:
       row.product_ids ?? [],
+
     validFrom: row.valid_from,
+
     validUntil: row.valid_until,
+
     status: getOfferStatus(
       row.valid_from,
       row.valid_until,
       row.is_enabled
     ),
+
     usage: row.usage_count,
+
     isEnabled: row.is_enabled,
   };
 }
@@ -211,6 +255,26 @@ export default function DiscountsPage() {
 
   const [originalPrice, setOriginalPrice] =
     useState("");
+
+    const [offerKind, setOfferKind] =
+  useState<"flat" | "buy_get" | "free_item">(
+    "flat"
+  );
+
+const [offerValue, setOfferValue] =
+  useState("");
+
+const [minimumOrderValue, setMinimumOrderValue] =
+  useState("");
+
+const [buyQuantity, setBuyQuantity] =
+  useState("");
+
+const [getQuantity, setGetQuantity] =
+  useState("");
+
+const [rewardProductId, setRewardProductId] =
+  useState("");
 
     const [products, setProducts] =
   useState<Product[]>([]);
@@ -438,31 +502,32 @@ const filteredProducts = useMemo(() => {
   /* FORM RESET                                                              */
   /* ---------------------------------------------------------------------- */
 
-  function resetForm() {
-    setEditingOfferId(null);
+ function resetForm() {
+  setEditingOfferId(null);
+  setSelectedType("discount");
 
-    setSelectedType("discount");
+  setTitle("");
+  setDescription("");
 
-    setTitle("");
+  setOfferKind("flat");
+  setOfferValue("");
+  setMinimumOrderValue("");
+  setBuyQuantity("");
+  setGetQuantity("");
+  setRewardProductId("");
 
-    setDescription("");
+  setDiscountPercent("");
+  setOfferPrice("");
+  setOriginalPrice("");
 
-    setDiscountPercent("");
+  setSelectedProductIds([]);
+  setProductSearch("");
 
-    setOfferPrice("");
+  setValidFrom("");
+  setValidUntil("");
 
-    setOriginalPrice("");
-
-    setSelectedProductIds([]);
-
-    setProductSearch("");
-
-    setValidFrom("");
-
-    setValidUntil("");
-
-    setError("");
-  }
+  setError("");
+}
 
   function toggleProductSelection(
   productId: string
@@ -488,45 +553,85 @@ const filteredProducts = useMemo(() => {
   /* EDIT                                                                    */
   /* ---------------------------------------------------------------------- */
 
-  function startEditOffer(
-    offer: Offer
-  ) {
-    setEditingOfferId(offer.id);
+ function startEditOffer(
+  offer: Offer
+) {
+  setEditingOfferId(offer.id);
 
-    setSelectedType(offer.type);
+  setSelectedType(offer.type);
 
-    setTitle(offer.title);
+  setTitle(offer.title);
 
-    setDescription(
-      offer.description || ""
-    );
+  setDescription(
+    offer.description || ""
+  );
 
-    setDiscountPercent(
-      offer.discountPercent
-        ? String(offer.discountPercent)
-        : ""
-    );
+  setOfferKind(
+    offer.offerKind || "flat"
+  );
 
-    setOfferPrice(
-      offer.offerPrice
-        ? String(offer.offerPrice)
-        : ""
-    );
+  setOfferValue(
+    offer.offerValue !== undefined
+      ? String(offer.offerValue)
+      : ""
+  );
 
-    setOriginalPrice(
-      offer.originalPrice
-        ? String(offer.originalPrice)
-        : ""
-    );
+  setMinimumOrderValue(
+    offer.minimumOrderValue !== undefined
+      ? String(offer.minimumOrderValue)
+      : ""
+  );
 
-    setValidFrom(offer.validFrom);
+  setBuyQuantity(
+    offer.buyQuantity !== undefined
+      ? String(offer.buyQuantity)
+      : ""
+  );
 
-    setValidUntil(offer.validUntil);
+  setGetQuantity(
+    offer.getQuantity !== undefined
+      ? String(offer.getQuantity)
+      : ""
+  );
 
-    setError("");
+  setRewardProductId(
+    offer.rewardProductId || ""
+  );
 
-    setShowCreate(true);
-  }
+  setDiscountPercent(
+    offer.discountPercent !== undefined
+      ? String(offer.discountPercent)
+      : ""
+  );
+
+  setOfferPrice(
+    offer.offerPrice !== undefined
+      ? String(offer.offerPrice)
+      : ""
+  );
+
+  setOriginalPrice(
+    offer.originalPrice !== undefined
+      ? String(offer.originalPrice)
+      : ""
+  );
+
+  setSelectedProductIds(
+    offer.type === "combo"
+      ? offer.productIds || []
+      : []
+  );
+
+  setProductSearch("");
+
+  setValidFrom(offer.validFrom);
+
+  setValidUntil(offer.validUntil);
+
+  setError("");
+
+  setShowCreate(true);
+}
 
   /* ---------------------------------------------------------------------- */
   /* CREATE / UPDATE                                                         */
@@ -601,15 +706,15 @@ if (selectedType === "discount") {
 }
 
 if (selectedType === "offer") {
-  const existingOffers =
-    currentActiveOrScheduledOffers.filter(
+  const existingOffer =
+    currentActiveOrScheduledOffers.some(
       (offer) =>
         offer.type === "offer"
-    ).length;
+    );
 
-  if (existingOffers >= 3) {
+  if (existingOffer) {
     setError(
-      "You can have a maximum of 3 active or scheduled offers at a time."
+      "You can have only one offer at a time. Delete, disable, or wait for the current offer to expire before creating a new one."
     );
     return;
   }
@@ -664,6 +769,26 @@ if (validUntil > maxValidUntil) {
       | number
       | null = null;
 
+      let selectedOfferValue:
+  | number
+  | null = null;
+
+let selectedMinimumOrderValue:
+  | number
+  | null = null;
+
+let selectedBuyQuantity:
+  | number
+  | null = null;
+
+let selectedGetQuantity:
+  | number
+  | null = null;
+
+let selectedRewardProductId:
+  | string
+  | null = null;
+
     if (
       selectedType ===
       "discount"
@@ -684,12 +809,15 @@ if (validUntil > maxValidUntil) {
     }
 
     if (selectedType === "combo") {
-      if (selectedProductIds.length < 2) {
-        setError(
-          "Please select at least 2 products for a combo."
-        );
-        return;
-      }
+     if (
+  selectedProductIds.length < 2 ||
+  selectedProductIds.length > 4
+) {
+  setError(
+    "A combo must contain 2 to 4 products."
+  );
+  return;
+}
 
       finalPrice = Number(offerPrice);
 
@@ -725,49 +853,193 @@ if (validUntil > maxValidUntil) {
       }
     }
 
-    setSaving(true);
+    if (selectedType === "offer") {
+
+  if (!offerKind) {
+    setError(
+      "Please select an offer type."
+    );
+    return;
+  }
+
+  selectedMinimumOrderValue =
+    minimumOrderValue
+      ? Number(minimumOrderValue)
+      : null;
+
+  if (
+    selectedMinimumOrderValue !== null &&
+    (
+      !Number.isFinite(
+        selectedMinimumOrderValue
+      ) ||
+      selectedMinimumOrderValue < 0
+    )
+  ) {
+    setError(
+      "Please enter a valid minimum order value."
+    );
+    return;
+  }
+
+  if (offerKind === "flat") {
+    selectedOfferValue =
+      Number(offerValue);
+
+    if (
+      !Number.isFinite(
+        selectedOfferValue
+      ) ||
+      selectedOfferValue <= 0
+    ) {
+      setError(
+        "Please enter a valid discount amount."
+      );
+      return;
+    }
+  }
+
+  if (offerKind === "buy_get") {
+    selectedBuyQuantity =
+      Number(buyQuantity);
+
+    selectedGetQuantity =
+      Number(getQuantity);
+
+    if (
+      !Number.isInteger(
+        selectedBuyQuantity
+      ) ||
+      selectedBuyQuantity <= 0
+    ) {
+      setError(
+        "Buy quantity must be a valid whole number."
+      );
+      return;
+    }
+
+    if (
+      !Number.isInteger(
+        selectedGetQuantity
+      ) ||
+      selectedGetQuantity <= 0
+    ) {
+      setError(
+        "Get quantity must be a valid whole number."
+      );
+      return;
+    }
+  }
+
+  if (offerKind === "free_item") {
+    if (!rewardProductId) {
+      setError(
+        "Please select the free product."
+      );
+      return;
+    }
+
+    const rewardProduct =
+      products.find(
+        (product) =>
+          product.id === rewardProductId
+      );
+
+    if (!rewardProduct) {
+      setError(
+        "Selected free product is no longer available."
+      );
+      return;
+    }
+
+    selectedRewardProductId =
+      rewardProductId;
+  }
+}
+setSaving(true);
 
     try {
-    const payload = {
+   const payload = {
   shop_id: shop.id,
   user_id: shop.user_id,
+
   type: selectedType,
+
   product_ids:
     selectedType === "combo"
       ? selectedProductIds
       : [],
+
   title: cleanTitle,
+
   description:
     cleanDescription ||
     (
-      selectedType ===
-      "discount"
+      selectedType === "discount"
         ? `Get ${percentage}% off on your order.`
-        : selectedType ===
-            "combo"
+        : selectedType === "combo"
           ? "Special combo offer"
-          : "Special offer for customers."
-          ),
-        discount_percent:
-          selectedType ===
-          "discount"
-            ? percentage
-            : null,
-        offer_price:
-          selectedType ===
-          "combo"
-            ? finalPrice
-            : null,
-        original_price:
-          selectedType ===
-          "combo"
-            ? oldPrice
-            : null,
-        valid_from:
-          validFrom,
-        valid_until:
-          validUntil,
-      };
+          : offerKind === "flat"
+            ? `Get ₹${selectedOfferValue} off on your order.`
+            : offerKind === "buy_get"
+              ? `Buy ${selectedBuyQuantity} and get ${selectedGetQuantity} free.`
+              : "Get a free item with your order."
+    ),
+
+  offer_kind:
+    selectedType === "offer"
+      ? offerKind
+      : null,
+
+  offer_value:
+    selectedType === "offer"
+      ? selectedOfferValue
+      : null,
+
+  minimum_order_value:
+    selectedType === "offer"
+      ? selectedMinimumOrderValue
+      : null,
+
+  buy_quantity:
+    selectedType === "offer" &&
+    offerKind === "buy_get"
+      ? selectedBuyQuantity
+      : null,
+
+  get_quantity:
+    selectedType === "offer" &&
+    offerKind === "buy_get"
+      ? selectedGetQuantity
+      : null,
+
+  reward_product_id:
+    selectedType === "offer" &&
+    offerKind === "free_item"
+      ? selectedRewardProductId
+      : null,
+
+  discount_percent:
+    selectedType === "discount"
+      ? percentage
+      : null,
+
+  offer_price:
+    selectedType === "combo"
+      ? finalPrice
+      : null,
+
+  original_price:
+    selectedType === "combo"
+      ? oldPrice
+      : null,
+
+  valid_from:
+    validFrom,
+
+  valid_until:
+    validUntil,
+};
 
       if (editingOfferId) {
         const {
@@ -1481,8 +1753,6 @@ if (validUntil > maxValidUntil) {
 
               )}
 
-              {/* COMBO */}
-
 {/* COMBO */}
 
 {selectedType === "combo" && (
@@ -1787,6 +2057,264 @@ if (validUntil > maxValidUntil) {
       </FormField>
 
     </div>
+
+  </div>
+
+)}
+
+{/* OFFER */}
+
+{selectedType === "offer" && (
+
+  <div className="space-y-4">
+
+    {/* OFFER KIND */}
+
+    <FormField label="Offer type">
+
+      <div className="grid grid-cols-3 gap-2">
+
+        <button
+          type="button"
+          onClick={() =>
+            setOfferKind("flat")
+          }
+          className={`rounded-[14px] border px-3 py-3 text-left transition ${
+            offerKind === "flat"
+              ? "border-[#159447] bg-[#159447]/[0.055]"
+              : "border-black/[0.08] bg-white hover:bg-black/[0.025]"
+          }`}
+        >
+
+          <p
+            className={`text-[11px] font-bold ${
+              offerKind === "flat"
+                ? "text-[#159447]"
+                : "text-black/65"
+            }`}
+          >
+            Flat Off
+          </p>
+
+          <p className="mt-1 text-[9px] leading-3.5 text-black/35">
+            Get ₹ off
+          </p>
+
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            setOfferKind("buy_get")
+          }
+          className={`rounded-[14px] border px-3 py-3 text-left transition ${
+            offerKind === "buy_get"
+              ? "border-[#159447] bg-[#159447]/[0.055]"
+              : "border-black/[0.08] bg-white hover:bg-black/[0.025]"
+          }`}
+        >
+
+          <p
+            className={`text-[11px] font-bold ${
+              offerKind === "buy_get"
+                ? "text-[#159447]"
+                : "text-black/65"
+            }`}
+          >
+            Buy & Get
+          </p>
+
+          <p className="mt-1 text-[9px] leading-3.5 text-black/35">
+            Buy X, get Y
+          </p>
+
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            setOfferKind("free_item")
+          }
+          className={`rounded-[14px] border px-3 py-3 text-left transition ${
+            offerKind === "free_item"
+              ? "border-[#159447] bg-[#159447]/[0.055]"
+              : "border-black/[0.08] bg-white hover:bg-black/[0.025]"
+          }`}
+        >
+
+          <p
+            className={`text-[11px] font-bold ${
+              offerKind === "free_item"
+                ? "text-[#159447]"
+                : "text-black/65"
+            }`}
+          >
+            Free Item
+          </p>
+
+          <p className="mt-1 text-[9px] leading-3.5 text-black/35">
+            Give a product free
+          </p>
+
+        </button>
+
+      </div>
+
+    </FormField>
+
+    {/* FLAT OFF */}
+
+    {offerKind === "flat" && (
+
+      <FormField label="Discount amount">
+
+        <div className="relative">
+
+          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[13px] font-bold text-black/35">
+            ₹
+          </span>
+
+          <input
+            type="number"
+            min="1"
+            step="0.01"
+            value={offerValue}
+            onChange={(e) =>
+              setOfferValue(
+                e.target.value
+              )
+            }
+            required
+            placeholder="50"
+            className={`${inputClass} pl-9`}
+          />
+
+        </div>
+
+      </FormField>
+
+    )}
+
+    {/* BUY & GET */}
+
+    {offerKind === "buy_get" && (
+
+      <div className="grid grid-cols-2 gap-3">
+
+        <FormField label="Buy quantity">
+
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={buyQuantity}
+            onChange={(e) =>
+              setBuyQuantity(
+                e.target.value
+              )
+            }
+            required
+            placeholder="2"
+            className={inputClass}
+          />
+
+        </FormField>
+
+        <FormField label="Get quantity">
+
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={getQuantity}
+            onChange={(e) =>
+              setGetQuantity(
+                e.target.value
+              )
+            }
+            required
+            placeholder="1"
+            className={inputClass}
+          />
+
+        </FormField>
+
+      </div>
+
+    )}
+
+    {/* FREE ITEM */}
+
+    {offerKind === "free_item" && (
+
+      <FormField label="Free product">
+
+        <select
+          value={rewardProductId}
+          onChange={(e) =>
+            setRewardProductId(
+              e.target.value
+            )
+          }
+          required
+          className={inputClass}
+        >
+
+          <option value="">
+            Select a product
+          </option>
+
+          {products.map(
+            (product) => (
+
+              <option
+                key={product.id}
+                value={product.id}
+              >
+                {product.product_name} — ₹
+                {product.price}
+              </option>
+
+            )
+          )}
+
+        </select>
+
+      </FormField>
+
+    )}
+
+    {/* MINIMUM ORDER */}
+
+    <FormField label="Minimum order value (optional)">
+
+      <div className="relative">
+
+        <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[13px] font-bold text-black/35">
+          ₹
+        </span>
+
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={minimumOrderValue}
+          onChange={(e) =>
+            setMinimumOrderValue(
+              e.target.value
+            )
+          }
+          placeholder="299"
+          className={`${inputClass} pl-9`}
+        />
+
+      </div>
+
+      <p className="mt-1.5 text-[9px] leading-4 text-black/35">
+        Leave empty if the offer should apply to every eligible order.
+      </p>
+
+    </FormField>
 
   </div>
 

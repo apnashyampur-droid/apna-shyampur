@@ -594,18 +594,18 @@ const filteredCombos = useMemo(() => {
 
           </div>
 
-          <div className="mt-1 text-[18px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[26px]">
+         <div className="mt-0.5 text-[15px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[26px]">
             {shop.activeDiscount.discount_percent}% OFF
           </div>
 
           {shop.activeDiscount.title && (
-            <div className="mt-1 text-[9px] font-black leading-3.5 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
+            <div className="mt-0.5 line-clamp-1 text-[8px] font-black leading-3 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
               {shop.activeDiscount.title}
             </div>
           )}
 
           {shop.activeDiscount.description && (
-            <div className="mt-0.5 max-w-[165px] text-[8px] font-medium leading-3 text-white/65 sm:mt-1 sm:max-w-[240px] sm:text-[10px] sm:leading-4">
+           <div className="mt-0.5 line-clamp-1 text-[8px] font-black leading-3 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
               {shop.activeDiscount.description}
             </div>
           )}
@@ -615,9 +615,8 @@ const filteredCombos = useMemo(() => {
     )}
 
   {shop.activeOffer && (
-    <div className="w-[155px] sm:w-[175px]">
-      <div className="rounded-[13px] border border-white/20 bg-white/92 px-2.5 py-2 text-black shadow-[0_8px_25px_rgba(0,0,0,.14)] backdrop-blur-xl sm:px-3 sm:py-2.5">
-
+    <div className="w-[125px] sm:w-[175px]">
+  <div className="rounded-[11px] border border-white/20 bg-white/92 px-2 py-1.5 text-black shadow-[0_8px_25px_rgba(0,0,0,.14)] backdrop-blur-xl sm:px-3 sm:py-2.5">
         <div className="flex items-center gap-2">
 
           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">

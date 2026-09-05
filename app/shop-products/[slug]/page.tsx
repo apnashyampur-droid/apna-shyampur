@@ -663,14 +663,14 @@ const filteredCombos = useMemo(() => {
           </div>
         )}
 
-       {shop.activeOffer.title && (
-  <div className="mt-1 text-[8.5px] font-black leading-3.5 text-black sm:text-[9px]">
+     {shop.activeOffer.title && (
+  <div className="mt-0.5 line-clamp-1 text-[7.5px] font-black leading-3 text-black sm:mt-1 sm:text-[9px] sm:leading-3.5">
     {shop.activeOffer.title}
   </div>
 )}
 
 {shop.activeOffer.description && (
-  <div className="mt-0.5 max-w-[135px] text-[8px] font-medium leading-3 text-black/55 sm:mt-1 sm:max-w-[150px] sm:text-[9px] sm:leading-3.5">
+  <div className="mt-0.5 max-w-[108px] line-clamp-1 text-[7px] font-medium leading-2.5 text-black/55 sm:mt-1 sm:max-w-[150px] sm:text-[9px] sm:leading-3.5">
     {shop.activeOffer.description}
   </div>
 )}

@@ -26,9 +26,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const secret = process.env.RAZORPAY_KEY_SECRET;
+    const secret =
+      process.env.RAZORPAY_KEY_SECRET;
 
     if (!secret) {
+      console.error(
+        "RAZORPAY_KEY_SECRET is missing."
+      );
+
       return NextResponse.json(
         {
           success: false,
@@ -47,10 +52,24 @@ export async function POST(request: Request) {
         )
         .digest("hex");
 
+    const generatedBuffer =
+      Buffer.from(
+        generatedSignature,
+        "utf8"
+      );
+
+    const receivedBuffer =
+      Buffer.from(
+        razorpay_signature,
+        "utf8"
+      );
+
     const isValid =
+      generatedBuffer.length ===
+        receivedBuffer.length &&
       crypto.timingSafeEqual(
-        Buffer.from(generatedSignature),
-        Buffer.from(razorpay_signature)
+        generatedBuffer,
+        receivedBuffer
       );
 
     if (!isValid) {

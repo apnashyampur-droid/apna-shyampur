@@ -549,7 +549,7 @@ const { data: orderData, error: orderError } =
 
       shop_id: cart.shopId,
 
-      status: "placed",
+      status: "pending",
 
       payment_status: "paid",
 

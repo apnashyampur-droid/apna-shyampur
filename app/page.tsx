@@ -1403,8 +1403,6 @@ useEffect(() => {
 
       {/* FOOTER */}
 
-{/* FOOTER */}
-
 <footer className="border-t border-black/[0.07] bg-white">
 
   <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-5 py-8 sm:px-8 md:flex-row md:items-center md:justify-between">

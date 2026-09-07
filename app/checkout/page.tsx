@@ -248,16 +248,6 @@ export default function CheckoutPage() {
     );
   }, [cart]);
 
-  /*
-    DELIVERY CHARGE
-
-    Temporary value.
-
-    Isko hum distance/category
-    calculation ke saath baad mein
-    replace karenge.
-  */
-
   const deliveryCharge = 0;
 
   const total =
@@ -315,13 +305,6 @@ export default function CheckoutPage() {
     setPlacingOrder(true);
 
     try {
-      /*
-       * Existing COD flow kept intact.
-       *
-       * Actual Supabase order creation
-       * can be connected to the existing
-       * orders schema separately.
-       */
 
       setOrderNumber(
         `AS${Date.now()
@@ -346,263 +329,249 @@ export default function CheckoutPage() {
 
   /* RAZORPAY PAYMENT */
 
-  const handleRazorpayPayment = async () => {
-    if (placingOrder) return;
+const handleRazorpayPayment = async () => {
+  if (placingOrder) return;
 
-    if (!cart) {
-      setError("Your cart is empty.");
-      return;
-    }
+  if (!cart) {
+    setError("Your cart is empty.");
+    return;
+  }
 
-    if (!profileComplete || !profile) {
-      setError(
-        "Please complete your profile before placing the order."
+  if (!profileComplete || !profile) {
+    setError(
+      "Please complete your profile before placing the order."
+    );
+    return;
+  }
+
+  setError(null);
+  setPlacingOrder(true);
+
+  try {
+ 
+    if (!window.Razorpay) {
+      throw new Error(
+        "Payment gateway is still loading. Please try again."
       );
-      return;
     }
 
-    setError(null);
-    setPlacingOrder(true);
-
-    try {
-      /*
-       * Razorpay Checkout script
-       * must already be available.
-       */
-
-      if (!window.Razorpay) {
-        throw new Error(
-          "Payment gateway is still loading. Please try again."
-        );
-      }
-
-      const keyId =
-        process.env
-          .NEXT_PUBLIC_RAZORPAY_KEY_ID;
-
-      if (!keyId) {
-        throw new Error(
-          "Razorpay payment key is not configured."
-        );
-      }
-
-      /*
-       * Razorpay accepts amount in paise.
-       *
-       * Example:
-       * ₹100 -> 10000
-       */
-
-      const amountInPaise =
-        Math.round(total * 100);
-
-      if (
-        !Number.isInteger(amountInPaise) ||
-        amountInPaise < 100
-      ) {
-        throw new Error(
-          "Invalid payment amount."
-        );
-      }
-
-      /* CREATE RAZORPAY ORDER */
-
-      const createOrderResponse =
-        await fetch(
-          "/api/razorpay/create-order",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              amount: amountInPaise,
-            }),
-          }
-        );
-
-      const createOrderData =
-        await createOrderResponse.json();
-
-      if (
-        !createOrderResponse.ok ||
-        !createOrderData?.success ||
-        !createOrderData?.orderId
-      ) {
-        throw new Error(
-          createOrderData?.error ||
-            "Unable to create payment order."
-        );
-      }
-
-      const razorpayOrderId =
-        createOrderData.orderId;
-
-      /* RAZORPAY OPTIONS */
-
-      const options: RazorpayOptions = {
-        key: keyId,
-
-        amount:
-          createOrderData.amount,
-
-        currency:
-          createOrderData.currency ||
-          "INR",
-
-        name: "Apna Shyampur",
-
-        description:
-          "Apna Shyampur Order",
-
-        order_id:
-          razorpayOrderId,
-
-        prefill: {
-          name:
-            profile.full_name ||
-            "",
-
-          contact:
-            profile.phone ||
-            "",
-        },
-
-        theme: {
-          color: "#159447",
-        },
-
-        modal: {
-          ondismiss: () => {
-            setPlacingOrder(false);
-            setError(null);
-          },
-        },
-
-        handler:
-          async (
-            response
-          ) => {
-            try {
-              setError(null);
-
-              /*
-               * Send Razorpay response
-               * to our server.
-               */
-
-              const verifyResponse =
-                await fetch(
-                  "/api/razorpay/verify-payment",
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type":
-                        "application/json",
-                    },
-                    body: JSON.stringify(
-                      response
-                    ),
-                  }
-                );
-
-              const verifyData =
-                await verifyResponse.json();
-
-              if (
-                !verifyResponse.ok ||
-                !verifyData?.success
-              ) {
-                throw new Error(
-                  verifyData?.error ||
-                    "Payment verification failed."
-                );
-              }
-
-              /*
-               * Payment signature has now
-               * been verified by our server.
-               *
-               * Actual Supabase order creation
-               * should happen here once the
-               * final orders table/schema is
-               * connected.
-               */
-
-              setOrderNumber(
-                `AS${Date.now()
-                  .toString()
-                  .slice(-6)}`
-              );
-
-              setOrderCreated(true);
-              setPlacingOrder(false);
-            } catch (err) {
-              console.error(
-                "Payment verification error:",
-                err
-              );
-
-              setError(
-                err instanceof Error
-                  ? err.message
-                  : "Payment verification failed. Please contact support if money was deducted."
-              );
-
-              setPlacingOrder(false);
-            }
-          },
-      };
-
-      const razorpay =
-        new window.Razorpay(
-          options
-        );
-
-      /*
-       * Payment failed event.
-       */
-
-      razorpay.on(
-        "payment.failed",
-        (
-          response
-        ) => {
-          console.error(
-            "Razorpay payment failed:",
-            response
-          );
-
-          const description =
-            response?.error
-              ?.description;
-
-          setError(
-            description ||
-              "Payment failed. Please try again."
-          );
-
-          setPlacingOrder(false);
+    const configResponse =
+      await fetch(
+        "/api/razorpay/config",
+        {
+          method: "GET",
+          cache: "no-store",
         }
       );
 
-      razorpay.open();
-    } catch (err) {
-      console.error(
-        "Razorpay payment error:",
-        err
-      );
+    const configData =
+      await configResponse.json();
 
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to start payment. Please try again."
+    if (
+      !configResponse.ok ||
+      !configData?.success ||
+      !configData?.keyId
+    ) {
+      throw new Error(
+        configData?.error ||
+          "Razorpay payment key is not configured."
       );
-
-      setPlacingOrder(false);
     }
-  };
+
+    const keyId =
+      configData.keyId;
+
+    const amountInPaise =
+      Math.round(total * 100);
+
+    if (
+      !Number.isInteger(amountInPaise) ||
+      amountInPaise < 100
+    ) {
+      throw new Error(
+        "Invalid payment amount."
+      );
+    }
+
+    /* CREATE RAZORPAY ORDER */
+
+    const createOrderResponse =
+      await fetch(
+        "/api/razorpay/create-order",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            amount: amountInPaise,
+          }),
+        }
+      );
+
+    const createOrderData =
+      await createOrderResponse.json();
+
+    if (
+      !createOrderResponse.ok ||
+      !createOrderData?.success ||
+      !createOrderData?.orderId
+    ) {
+      throw new Error(
+        createOrderData?.error ||
+          "Unable to create payment order."
+      );
+    }
+
+    const razorpayOrderId =
+      createOrderData.orderId;
+
+    /* RAZORPAY OPTIONS */
+
+    const options: RazorpayOptions = {
+      key: keyId,
+
+      amount:
+        createOrderData.amount,
+
+      currency:
+        createOrderData.currency ||
+        "INR",
+
+      name: "Apna Shyampur",
+
+      description:
+        "Apna Shyampur Order",
+
+      order_id:
+        razorpayOrderId,
+
+      prefill: {
+        name:
+          profile.full_name ||
+          "",
+
+        contact:
+          profile.phone ||
+          "",
+      },
+
+      theme: {
+        color: "#159447",
+      },
+
+      modal: {
+        ondismiss: () => {
+          setPlacingOrder(false);
+          setError(null);
+        },
+      },
+
+      handler:
+        async (
+          response
+        ) => {
+          try {
+            setError(null);
+
+            const verifyResponse =
+              await fetch(
+                "/api/razorpay/verify-payment",
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type":
+                      "application/json",
+                  },
+                  body: JSON.stringify(
+                    response
+                  ),
+                }
+              );
+
+            const verifyData =
+              await verifyResponse.json();
+
+            if (
+              !verifyResponse.ok ||
+              !verifyData?.success
+            ) {
+              throw new Error(
+                verifyData?.error ||
+                  "Payment verification failed."
+              );
+            }
+
+            setOrderNumber(
+              `AS${Date.now()
+                .toString()
+                .slice(-6)}`
+            );
+
+            setOrderCreated(true);
+            setPlacingOrder(false);
+          } catch (err) {
+            console.error(
+              "Payment verification error:",
+              err
+            );
+
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Payment verification failed. Please contact support if money was deducted."
+            );
+
+            setPlacingOrder(false);
+          }
+        },
+    };
+
+    const razorpay =
+      new window.Razorpay(
+        options
+      );
+
+    razorpay.on(
+      "payment.failed",
+      (
+        response
+      ) => {
+        console.error(
+          "Razorpay payment failed:",
+          response
+        );
+
+        const description =
+          response?.error
+            ?.description;
+
+        setError(
+          description ||
+            "Payment failed. Please try again."
+        );
+
+        setPlacingOrder(false);
+      }
+    );
+
+    razorpay.open();
+  } catch (err) {
+    console.error(
+      "Razorpay payment error:",
+      err
+    );
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Unable to start payment. Please try again."
+    );
+
+    setPlacingOrder(false);
+  }
+};
 
   /* PAYMENT ACTION */
 

@@ -45,11 +45,6 @@ type ShopOffer = {
   offer_price: number | null;
   original_price: number | null;
   product_ids: string[] | null;
-  offer_kind: "flat" | "buy_get" | "free_item" | null;
-  offer_value: number | null;
-  minimum_order_value: number | null;
-  buy_quantity: number | null;
-  get_quantity: number | null;
   valid_from: string;
   valid_until: string;
   is_enabled: boolean;
@@ -562,7 +557,7 @@ useEffect(() => {
   fetchReviews();
 }, [shop?.id]);
 
-   /* FETCH SHOP OFFERS */
+  /* FETCH SHOP OFFERS */
 
   useEffect(() => {
     if (!shop?.id) {
@@ -596,11 +591,6 @@ useEffect(() => {
               offer_price,
               original_price,
               product_ids,
-              offer_kind,
-              offer_value,
-              minimum_order_value,
-              buy_quantity,
-              get_quantity,
               valid_from,
               valid_until,
               is_enabled
@@ -608,7 +598,7 @@ useEffect(() => {
           )
           .eq("shop_id", shop.id)
           .eq("is_enabled", true)
-          .in("type", ["discount", "offer"])
+          .eq("type", "discount")
           .lte("valid_from", today)
           .gte("valid_until", today)
           .order("created_at", {
@@ -651,19 +641,14 @@ const myReview = userId
     ) ?? null
   : null;
 
-    const activeDiscount =
-    shopOffers.find(
-      (offer) =>
-        offer.type === "discount" &&
-        offer.discount_percent !== null
-    ) ?? null;
+  const activeDiscount =
+  shopOffers.find(
+    (offer) =>
+      offer.type === "discount" &&
+      offer.discount_percent !== null
+  ) ?? null;
 
-  const activeOffer =
-    shopOffers.find(
-      (offer) => offer.type === "offer"
-    ) ?? null;
-
-  const canPostReview =
+const canPostReview =
   !!userId && !myReview;
 
   const shopIsOpen = shop
@@ -1164,151 +1149,59 @@ const handleSubmitReview = async () => {
 
 </div>
 
-                            {/* HERO OFFERS */}
+              {activeDiscount &&
+  activeDiscount.discount_percent !== null && (
+  <div className="absolute right-3.5 top-3.5 z-20 w-[185px] sm:right-7 sm:top-7 sm:w-auto sm:max-w-[280px]">
+  <div className="rounded-[15px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
+        <div className="flex items-center gap-2">
 
-             <div className="absolute right-2.5 top-2.5 z-20 flex w-[145px] flex-col items-end gap-1 sm:right-7 sm:top-7 sm:w-auto sm:gap-1.5">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
 
-                {/* ACTIVE DISCOUNT */}
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83l-3.35-3.35a2 2 0 0 0-2.83 0Z" />
+              <circle
+                cx="7.5"
+                cy="7.5"
+                r="1"
+              />
+            </svg>
 
-                {activeDiscount &&
-                  activeDiscount.discount_percent !== null && (
-                   
-                    <div className="w-full sm:w-auto sm:max-w-[280px]">
+          </div>
 
-  <div className="rounded-[12px] border border-white/20 bg-black/45 px-2 py-1.5 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
+          <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/70">
+            Special offer
+          </span>
 
-                        <div className="flex items-center gap-2">
+        </div>
 
-                       <div className="flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white sm:h-7 sm:w-7">
+        <div className="mt-1 text-[18px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[26px]">
+          {activeDiscount.discount_percent}% OFF
+        </div>
 
-                            <svg
-                              width="11"
-                              height="11"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83l-3.35-3.35Z" />
+        {activeDiscount.title && (
+          <div className="mt-1 text-[9px] font-black leading-3.5 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
+            {activeDiscount.title}
+          </div>
+        )}
 
-                              <circle
-                                cx="7.5"
-                                cy="7.5"
-                                r="1"
-                              />
+        {activeDiscount.description && (
+        <div className="mt-0.5 max-w-[165px] text-[8px] font-medium leading-3 text-white/65 sm:mt-1 sm:max-w-[240px] sm:text-[10px] sm:leading-4">
+            {activeDiscount.description}
+          </div>
+        )}
 
-                            </svg>
-
-                          </div>
-
-                          <span className="text-[9px] font-black uppercase tracking-[0.14em] text-white/70">
-                            Special offer
-                          </span>
-
-                        </div>
-
-                       <div className="mt-0.5 text-[15px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[26px]">
-                          {activeDiscount.discount_percent}% OFF
-                        </div>
-
-                        {activeDiscount.title && (
-                         <div className="mt-0.5 line-clamp-1 text-[8px] font-black leading-3 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
-                            {activeDiscount.title}
-                          </div>
-                        )}
-
-                        {activeDiscount.description && (
-                          <div className="mt-0.5 max-w-[125px] line-clamp-1 text-[7px] font-medium leading-2.5 text-white/65 sm:mt-1 sm:max-w-[240px] sm:text-[10px] sm:leading-4">
-                            {activeDiscount.description}
-                          </div>
-                        )}
-
-                      </div>
-
-                    </div>
-                  )}
-
-                {/* ACTIVE OFFER */}
-
-                {activeOffer && (
-               
-               <div className="w-[125px] sm:w-[175px]">
-
-  <div className="rounded-[11px] border border-white/20 bg-white/92 px-2 py-1.5 text-black shadow-[0_8px_25px_rgba(0,0,0,.14)] backdrop-blur-xl sm:px-3 sm:py-2.5">
-                      <div className="flex items-center gap-2">
-
-                        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
-
-                          <svg
-                            width="10"
-                            height="10"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83l-3.35-3.35a2 2 0 0 0 0-2.83Z" />
-
-                            <circle
-                              cx="7.5"
-                              cy="7.5"
-                              r="1"
-                            />
-
-                          </svg>
-
-                        </div>
-
-                        <span className="text-[7.5px] font-black uppercase tracking-[0.11em] text-[#159447]">
-                          Special Deal
-                        </span>
-
-                      </div>
-
-                      {activeOffer.offer_kind === "flat" &&
-                        activeOffer.offer_value !== null && (
-                          <div className="mt-1 text-[14px] font-black leading-none tracking-[-0.03em] sm:text-[15px]">
-                            ₹{activeOffer.offer_value} OFF
-                          </div>
-                        )}
-
-                      {activeOffer.offer_kind === "buy_get" &&
-                        activeOffer.buy_quantity !== null &&
-                        activeOffer.get_quantity !== null && (
-                          <div className="mt-1 text-[11px] font-black leading-3.5 sm:text-[12px]">
-                            BUY {activeOffer.buy_quantity} GET{" "}
-                            {activeOffer.get_quantity}
-                          </div>
-                        )}
-
-                      {activeOffer.offer_kind === "free_item" && (
-                        <div className="mt-1 text-[11px] font-black leading-3.5 sm:text-[12px]">
-                          FREE ITEM
-                        </div>
-                      )}
-
-                   {activeOffer.title && (
-  <div className="mt-0.5 line-clamp-1 text-[7.5px] font-black leading-3 text-black sm:mt-1 sm:text-[9px] sm:leading-3.5">
-    {activeOffer.title}
-  </div>
-)}
-
-{activeOffer.description && (
-  <div className="mt-0.5 max-w-[108px] line-clamp-1 text-[7px] font-medium leading-2.5 text-black/55 sm:mt-1 sm:max-w-[150px] sm:text-[9px] sm:leading-3.5">
-    {activeOffer.description}
-  </div>
-)}
-
-                    </div>
-
-                  </div>
-                )}
-
-              </div>
+      </div>
+    </div>
+  )}
 
               <div className="absolute inset-x-0 bottom-0 z-10 px-5 pb-7 text-white sm:px-8 sm:pb-9">
 

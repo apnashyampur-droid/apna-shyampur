@@ -20,16 +20,6 @@ type ShopDiscount = {
   discount_percent: number | null;
 };
 
-type ShopOffer = {
-  id: string;
-  title: string;
-  description: string | null;
-  offer_kind: "flat" | "buy_get" | "free_item" | null;
-  offer_value: number | null;
-  buy_quantity: number | null;
-  get_quantity: number | null;
-};
-
 type Shop = {
   id: string;
   name: string;
@@ -40,8 +30,7 @@ type Shop = {
   address: string | null;
   opening_time: string | null;
   closing_time: string | null;
-    activeDiscount: ShopDiscount | null;
-  activeOffer: ShopOffer | null;
+  activeDiscount: ShopDiscount | null;
 };
 
 type Product = {
@@ -98,6 +87,7 @@ const [refreshing, setRefreshing] = useState(false);
 const [error, setError] = useState("");
 
 const [search, setSearch] = useState("");
+const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
 
 const [discountRange, setDiscountRange] = useState<
   "1-25" | "25-50" | "50-75" | "75-100" | null
@@ -106,6 +96,85 @@ const [discountRange, setDiscountRange] = useState<
 const [showCombos, setShowCombos] = useState(false);
 
 const [cart, setCart] = useState<Record<string, number>>({});
+
+/* -------------------------------------------------------------------------- */
+/* SAVE CART                                                                  */
+/* -------------------------------------------------------------------------- */
+
+useEffect(() => {
+  if (!shop || products.length === 0) return;
+
+  const cartEntries = Object.entries(cart).filter(
+    ([, quantity]) => quantity > 0
+  );
+
+  if (cartEntries.length === 0) {
+    localStorage.removeItem("apna_shyampur_cart");
+    return;
+  }
+
+  const savedCart = {
+    shopId: shop.id,
+    shopName: shop.name,
+    shopSlug: shop.slug,
+    shopCategory: shop.category ?? undefined,
+
+    items: cartEntries
+      .map(([productId, quantity]) => {
+        const product = products.find(
+          (item) => item.id === productId
+        );
+
+        if (!product) return null;
+
+        return {
+          productId: product.id,
+          productName: product.product_name,
+          quantity,
+          price: Number(product.price),
+          salePrice:
+            product.sale_price !== null
+              ? Number(product.sale_price)
+              : null,
+          imageUrl: product.image_url,
+        };
+      })
+      .filter(Boolean),
+  };
+
+  localStorage.setItem(
+    "apna_shyampur_cart",
+    JSON.stringify(savedCart)
+  );
+}, [cart, shop, products]);
+
+const cartItems = useMemo(() => {
+
+  return products
+    .filter((product) => (cart[product.id] ?? 0) > 0)
+    .map((product) => ({
+      ...product,
+      quantity: cart[product.id],
+    }));
+}, [products, cart]);
+
+const cartItemCount = useMemo(() => {
+  return Object.values(cart).reduce(
+    (total, quantity) => total + quantity,
+    0
+  );
+}, [cart]);
+
+const cartTotal = useMemo(() => {
+  return cartItems.reduce((total, item) => {
+    const price =
+      item.sale_price !== null
+        ? Number(item.sale_price)
+        : Number(item.price);
+
+    return total + price * item.quantity;
+  }, 0);
+}, [cartItems]);
 
   /* ------------------------------------------------------------------------ */
   /* LOAD SHOP + PRODUCTS                                                     */
@@ -209,57 +278,9 @@ const activeDiscount: ShopDiscount | null =
       }
     : null;
 
-/* ------------------------------------------------------------------ */
-/* ACTIVE OFFER                                                       */
-/* ------------------------------------------------------------------ */
-
-const {
-  data: offerData,
-  error: offerError,
-} = await supabase
-  .from("shop_offers")
-  .select(`
-    id,
-    title,
-    description,
-    offer_kind,
-    offer_value,
-    buy_quantity,
-    get_quantity
-  `)
-  .eq("shop_id", currentShop.id)
-  .eq("type", "offer")
-  .eq("is_enabled", true)
-  .lte("valid_from", today)
-  .gte("valid_until", today)
-  .order("created_at", {
-    ascending: false,
-  });
-
-if (offerError) {
-  console.error(
-    "SHOP OFFER FETCH ERROR:",
-    offerError
-  );
-}
-
-const activeOffer: ShopOffer | null =
-  offerData && offerData.length > 0
-    ? {
-        id: offerData[0].id,
-        title: offerData[0].title,
-        description: offerData[0].description,
-        offer_kind: offerData[0].offer_kind,
-        offer_value: offerData[0].offer_value,
-        buy_quantity: offerData[0].buy_quantity,
-        get_quantity: offerData[0].get_quantity,
-      }
-    : null;
-
 const shopWithDiscount: Shop = {
   ...currentShop,
   activeDiscount,
-  activeOffer,
 };
 
 setShop(shopWithDiscount);
@@ -349,9 +370,128 @@ if (combosError) {
     [slug, supabase]
   );
 
-  useEffect(() => {
-    loadShop();
-  }, [loadShop]);
+ useEffect(() => {
+  loadShop();
+}, [loadShop]);
+
+/* -------------------------------------------------------------------------- */
+/* LOAD SAVED CART                                                            */
+/* -------------------------------------------------------------------------- */
+
+useEffect(() => {
+  try {
+    const savedCart = localStorage.getItem(
+      "apna_shyampur_cart"
+    );
+
+    if (!savedCart) return;
+
+    const parsedCart = JSON.parse(savedCart);
+
+    if (!parsedCart?.shopId || !Array.isArray(parsedCart.items)) {
+      localStorage.removeItem("apna_shyampur_cart");
+      return;
+    }
+
+    /*
+     * Only restore the quantity map here.
+     * Product details come from the current shop's database data.
+     */
+
+    const restoredCart: Record<string, number> = {};
+
+    parsedCart.items.forEach(
+      (item: {
+        productId?: string;
+        quantity?: number;
+      }) => {
+        if (
+          item.productId &&
+          typeof item.quantity === "number" &&
+          item.quantity > 0
+        ) {
+          restoredCart[item.productId] = item.quantity;
+        }
+      }
+    );
+
+    setCart(restoredCart);
+  } catch (error) {
+    console.error(
+      "Failed to restore saved cart:",
+      error
+    );
+
+    localStorage.removeItem("apna_shyampur_cart");
+  }
+}, []);
+
+useEffect(() => {
+  loadShop();
+}, [loadShop]);
+
+useEffect(() => {
+  if (!shop) return;
+
+  try {
+    const savedCart = localStorage.getItem(
+      "apna_shyampur_cart"
+    );
+
+    if (!savedCart) return;
+
+    const parsedCart = JSON.parse(savedCart);
+
+    if (
+      !parsedCart?.shopId ||
+      parsedCart.shopId !== shop.id ||
+      !Array.isArray(parsedCart.items)
+    ) {
+      return;
+    }
+
+    const restoredCart: Record<string, number> = {};
+
+    parsedCart.items.forEach(
+      (item: {
+        productId?: string;
+        quantity?: number;
+      }) => {
+        if (
+          item.productId &&
+          typeof item.quantity === "number" &&
+          item.quantity > 0
+        ) {
+          restoredCart[item.productId] = item.quantity;
+        }
+      }
+    );
+
+    setCart(restoredCart);
+  } catch (error) {
+    console.error(
+      "Failed to restore saved cart:",
+      error
+    );
+  }
+}, [shop]);
+
+const searchSuggestions = useMemo(() => {
+
+  const normalizedSearch = search.trim().toLowerCase();
+
+  if (!normalizedSearch || showCombos) {
+    return [];
+  }
+
+  return products
+    .filter((product) =>
+      product.product_name
+        ?.toLowerCase()
+        .includes(normalizedSearch)
+    )
+    .slice(0, 6);
+}, [products, search, showCombos]);
 
   const filteredProducts = useMemo(() => {
   const normalizedSearch = search.trim().toLowerCase();
@@ -564,122 +704,55 @@ const filteredCombos = useMemo(() => {
 
             <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/20 to-black/5" />
 
-<div className="absolute right-2.5 top-2.5 z-20 flex w-[145px] flex-col items-end gap-1 sm:right-7 sm:top-7 sm:w-auto sm:gap-1.5">
-
-  {shop.activeDiscount &&
-    shop.activeDiscount.discount_percent !== null && (
-      <div className="w-full sm:w-auto sm:max-w-[280px]">
-  <div className="rounded-[12px] border border-white/20 bg-black/45 px-2 py-1.5 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
-          <div className="flex items-center gap-1.5">
-
-           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white sm:h-7 sm:w-7">
-              <svg
-                width="9"
-                height="9"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83Z" />
-                <circle cx="7.5" cy="7.5" r="1" />
-              </svg>
-            </div>
-
-            <span className="text-[7px] font-black uppercase tracking-[0.12em] text-white/70">
-              Special offer
-            </span>
-
-          </div>
-
-         <div className="mt-0.5 text-[15px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[26px]">
-            {shop.activeDiscount.discount_percent}% OFF
-          </div>
-
-          {shop.activeDiscount.title && (
-            <div className="mt-0.5 line-clamp-1 text-[8px] font-black leading-3 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
-              {shop.activeDiscount.title}
-            </div>
-          )}
-
-          {shop.activeDiscount.description && (
-           <div className="mt-0.5 line-clamp-1 text-[8px] font-black leading-3 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
-              {shop.activeDiscount.description}
-            </div>
-          )}
-
-        </div>
-      </div>
-    )}
-
-  {shop.activeOffer && (
-    <div className="w-[125px] sm:w-[175px]">
-  <div className="rounded-[11px] border border-white/20 bg-white/92 px-2 py-1.5 text-black shadow-[0_8px_25px_rgba(0,0,0,.14)] backdrop-blur-xl sm:px-3 sm:py-2.5">
-        <div className="flex items-center gap-2">
+{shop.activeDiscount &&
+  shop.activeDiscount.discount_percent !== null && (
+  <div className="absolute right-3.5 top-3.5 z-20 w-[185px] sm:right-7 sm:top-7 sm:w-auto sm:max-w-[280px]">
+  <div className="rounded-[15px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl sm:rounded-[18px] sm:px-4 sm:py-3.5">
+   <div className="flex items-center gap-1.5">
 
           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
+
             <svg
               width="10"
               height="10"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2.2"
+              strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
               <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83Z" />
               <circle cx="7.5" cy="7.5" r="1" />
             </svg>
+
           </div>
 
-          <span className="text-[7.5px] font-black uppercase tracking-[0.11em] text-[#159447]">
-            Special Deal
+          <span className="text-[7px] font-black uppercase tracking-[0.12em] text-white/70">
+            Special offer
           </span>
 
         </div>
 
-        {shop.activeOffer.offer_kind === "flat" &&
-          shop.activeOffer.offer_value !== null && (
-            <div className="mt-1 text-[14px] font-black leading-none tracking-[-0.03em] sm:text-[15px]">
-              ₹{shop.activeOffer.offer_value} OFF
-            </div>
-          )}
+      <div className="mt-1 text-[18px] font-black leading-none tracking-[-0.05em] sm:mt-2 sm:text-[26px]">
+          {shop.activeDiscount.discount_percent}% OFF
+        </div>
 
-        {shop.activeOffer.offer_kind === "buy_get" &&
-          shop.activeOffer.buy_quantity !== null &&
-          shop.activeOffer.get_quantity !== null && (
-            <div className="mt-1 text-[11px] font-black leading-3.5 sm:text-[12px]">
-              BUY {shop.activeOffer.buy_quantity} GET{" "}
-              {shop.activeOffer.get_quantity}
-            </div>
-          )}
-
-        {shop.activeOffer.offer_kind === "free_item" && (
-          <div className="mt-1 text-[11px] font-black leading-3.5 sm:text-[12px]">
-            FREE ITEM
+        {shop.activeDiscount.title && (
+       <div className="mt-1 text-[9px] font-black leading-3.5 tracking-[-0.01em] text-white sm:mt-1.5 sm:text-[13px] sm:leading-4">
+            {shop.activeDiscount.title}
           </div>
         )}
 
-     {shop.activeOffer.title && (
-  <div className="mt-0.5 line-clamp-1 text-[7.5px] font-black leading-3 text-black sm:mt-1 sm:text-[9px] sm:leading-3.5">
-    {shop.activeOffer.title}
-  </div>
-)}
-
-{shop.activeOffer.description && (
-  <div className="mt-0.5 max-w-[108px] line-clamp-1 text-[7px] font-medium leading-2.5 text-black/55 sm:mt-1 sm:max-w-[150px] sm:text-[9px] sm:leading-3.5">
-    {shop.activeOffer.description}
-  </div>
-)}
+        {shop.activeDiscount.description && (
+<div className="mt-0.5 max-w-[165px] text-[8px] font-medium leading-3 text-white/65 sm:mt-1 sm:max-w-[240px] sm:text-[10px] sm:leading-4">
+            {shop.activeDiscount.description}
+          </div>
+        )}
 
       </div>
     </div>
   )}
-
-</div>
 
             {/* SHOP INFORMATION */}
 
@@ -806,35 +879,104 @@ const filteredCombos = useMemo(() => {
   <section className="mt-6 rounded-[22px] border border-black/[0.07] bg-white p-4 shadow-[0_12px_40px_rgba(0,0,0,.03)] sm:p-5">
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
 
-      {/* SEARCH */}
-
       <div className="relative min-w-0 flex-1">
-        <SearchIcon />
+  <SearchIcon />
 
-        <input
-          type="text"
-          value={search}
-          onChange={(event) =>
-            setSearch(event.target.value)
-          }
-          placeholder={
-            showCombos
-              ? "Search combos..."
-              : "Search products..."
-          }
-          className="h-[42px] w-full rounded-[12px] border border-black/[0.08] bg-[#fafafa] py-2.5 pl-10 pr-4 text-[10px] font-medium text-black outline-none transition placeholder:text-black/25 focus:border-[#159447]/45 focus:bg-white"
-        />
+  <input
+    type="text"
+    value={search}
+    onFocus={() => {
+      if (!showCombos && search.trim()) {
+        setShowSearchSuggestions(true);
+      }
+    }}
+    onChange={(event) => {
+      const value = event.target.value;
+
+      setSearch(value);
+
+      if (!showCombos && value.trim()) {
+        setShowSearchSuggestions(true);
+      } else {
+        setShowSearchSuggestions(false);
+      }
+    }}
+    placeholder={
+      showCombos
+        ? "Search combos..."
+        : "Search products..."
+    }
+    className="h-[42px] w-full rounded-[12px] border border-black/[0.08] bg-[#fafafa] py-2.5 pl-10 pr-4 text-[10px] font-medium text-black outline-none transition placeholder:text-black/25 focus:border-[#159447]/45 focus:bg-white"
+  />
+
+  {!showCombos &&
+    showSearchSuggestions &&
+    search.trim() &&
+    searchSuggestions.length > 0 && (
+      <div className="absolute left-0 right-0 top-[48px] z-30 overflow-hidden rounded-[14px] border border-black/[0.08] bg-white shadow-[0_15px_40px_rgba(0,0,0,.10)]">
+        {searchSuggestions.map((product) => (
+          <button
+            key={product.id}
+            type="button"
+            onMouseDown={(event) => {
+              event.preventDefault();
+
+              setSearch(product.product_name);
+              setShowSearchSuggestions(false);
+            }}
+            className="flex w-full items-center gap-3 border-b border-black/[0.05] px-4 py-3 text-left transition last:border-b-0 hover:bg-[#f5f6f4]"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[9px] bg-[#f1f3f1]">
+              {product.image_url ? (
+                <img
+                  src={product.image_url}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <ProductsIcon />
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[10px] font-black text-black/75">
+                {product.product_name}
+              </div>
+
+              <div className="mt-0.5 truncate text-[8px] font-medium text-black/35">
+                {product.category}
+              </div>
+            </div>
+
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="shrink-0 text-black/20"
+            >
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </button>
+        ))}
       </div>
+    )}
+</div>
 
       {/* COMBOS BUTTON */}
 
       <button
         type="button"
         onClick={() => {
-          setShowCombos((current) => !current);
-          setSearch("");
-          setDiscountRange(null);
-        }}
+  setShowCombos((current) => !current);
+  setSearch("");
+  setShowSearchSuggestions(false);
+  setDiscountRange(null);
+}}
         className={`inline-flex h-[42px] shrink-0 items-center justify-center gap-2 rounded-[12px] border px-4 text-[9px] font-black transition ${
           showCombos
             ? "border-[#159447]/30 bg-[#eef8f1] text-[#159447]"
@@ -935,9 +1077,10 @@ const filteredCombos = useMemo(() => {
       <button
         type="button"
         onClick={() => {
-          setSearch("");
-          setDiscountRange(null);
-        }}
+  setSearch("");
+  setShowSearchSuggestions(false);
+  setDiscountRange(null);
+}}
         className="text-[9px] font-black text-[#159447] transition hover:text-[#117d3c]"
       >
         Clear filters
@@ -986,9 +1129,10 @@ const filteredCombos = useMemo(() => {
 ) : filteredProducts.length === 0 ? (
   <NoProductResults
     onClear={() => {
-      setSearch("");
-      setDiscountRange(null);
-    }}
+  setSearch("");
+  setShowSearchSuggestions(false);
+  setDiscountRange(null);
+}}
   />
 ) : (
   <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
@@ -1036,6 +1180,69 @@ const filteredCombos = useMemo(() => {
 
                <div className="h-10" />
       </section>
+
+            {/* CART BAR */}
+
+{/* CART BAR */}
+
+{cartItemCount > 0 && (
+  <div className="fixed inset-x-0 bottom-0 z-50 px-3 pb-3 sm:px-5 sm:pb-5">
+    <div className="mx-auto flex max-w-[700px] items-center gap-3 rounded-[18px] border border-black/[0.08] bg-white/95 p-2.5 shadow-[0_18px_60px_rgba(0,0,0,.15)] backdrop-blur-xl sm:rounded-[20px] sm:p-3">
+
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] bg-[#eef8f1] text-[#159447]">
+        <CartIcon />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="text-[9px] font-bold text-black/40">
+          {cartItemCount}{" "}
+          {cartItemCount === 1 ? "item" : "items"}
+        </div>
+
+        <div className="mt-0.5 text-[15px] font-black tracking-[-0.04em]">
+          ₹{formatPrice(cartTotal)}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          setCart({});
+          localStorage.removeItem("apna_shyampur_cart");
+        }}
+        aria-label="Clear cart"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-black/[0.08] bg-white text-black/35 transition hover:border-black/[0.14] hover:bg-black/[0.03] hover:text-black active:scale-95"
+      >
+        <CloseIcon />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          router.push("/view-cart");
+        }}
+        className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-[13px] bg-[#159447] px-5 text-[9px] font-black text-white shadow-[0_8px_22px_rgba(21,148,71,.18)] transition hover:bg-[#117d3c] active:scale-[0.98] sm:px-6"
+      >
+        View Cart
+
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 12h14" />
+          <path d="m13 6 6 6-6 6" />
+        </svg>
+      </button>
+
+    </div>
+  </div>
+)}
 
       {/* FOOTER */}
 
@@ -1935,6 +2142,23 @@ function PlusIcon() {
     >
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+    >
+      <path d="M6 6l12 12" />
+      <path d="M18 6 6 18" />
     </svg>
   );
 }

@@ -278,60 +278,6 @@ export default function SettingScreen() {
 
 </button>
 
-          {/* PRIVACY */}
-
-          <button
-            type="button"
-            className="group flex w-full items-center gap-4 border-b border-black/[0.06] px-5 py-5 text-left transition hover:bg-black/[0.015] sm:px-6"
-          >
-
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#f3f4f2] text-black/65">
-
-              <svg
-                width="19"
-                height="19"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 3 19 6v5c0 4.7-2.8 8.3-7 10-4.2-1.7-7-5.3-7-10V6l7-3Z" />
-                <path d="m9.5 12 1.7 1.7 3.5-3.5" />
-              </svg>
-
-            </div>
-
-            <div className="min-w-0 flex-1">
-
-              <div className="text-[13px] font-black">
-                Account & Security
-              </div>
-
-              <div className="mt-1 text-[10px] leading-4 text-black/40">
-                Manage your privacy and account security.
-              </div>
-
-            </div>
-
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="shrink-0 text-black/25"
-            >
-              <path d="m9 18 6-6-6-6" />
-            </svg>
-
-          </button>
-
-
           {/* ABOUT */}
 
           <div className="border-b border-black/[0.06] px-5 py-4 sm:px-6">
@@ -347,6 +293,7 @@ export default function SettingScreen() {
 
           <button
             type="button"
+            onClick={() => router.push("/privacy-policy")}
             className="group flex w-full items-center gap-4 border-b border-black/[0.06] px-5 py-5 text-left transition hover:bg-black/[0.015] sm:px-6"
           >
 
@@ -404,6 +351,7 @@ export default function SettingScreen() {
 
           <button
             type="button"
+            onClick={() => router.push("/terms-and-conditions")}
             className="group flex w-full items-center gap-4 border-b border-black/[0.06] px-5 py-5 text-left transition hover:bg-black/[0.015] sm:px-6"
           >
 
@@ -460,6 +408,7 @@ export default function SettingScreen() {
 
           <button
             type="button"
+            onClick={() => router.push("/about")}
             className="group flex w-full items-center gap-4 border-b border-black/[0.06] px-5 py-5 text-left transition hover:bg-black/[0.015] sm:px-6"
           >
 
@@ -606,8 +555,6 @@ export default function SettingScreen() {
 
         </div>
       </footer>
-
-            {/* LOGOUT CONFIRMATION */}
 
       {/* LOGOUT CONFIRMATION */}
 

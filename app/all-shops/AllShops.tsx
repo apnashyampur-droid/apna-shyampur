@@ -11,17 +11,6 @@ type ShopDiscount = {
   discount_percent: number | null;
 };
 
-type ShopOffer = {
-  id: string;
-  title: string | null;
-  description: string | null;
-  offer_kind: "flat" | "buy_get" | "free_item" | null;
-  offer_value: number | null;
-  minimum_order_value: number | null;
-  buy_quantity: number | null;
-  get_quantity: number | null;
-};
-
 type Shop = {
   id: string;
   name: string;
@@ -38,7 +27,6 @@ type Shop = {
   is_active: boolean;
   created_at: string;
   activeDiscount: ShopDiscount | null;
-  activeOffer: ShopOffer | null;
 };
 
 const categoryMap: Record<string, string[]> = {
@@ -231,10 +219,7 @@ const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
           return;
         }
 
-        const shopsData = (data || []) as Omit<
-  Shop,
-  "activeDiscount" | "activeOffer"
->[];
+        const shopsData = (data || []) as Omit<Shop, "activeDiscount">[];
 
 if (shopsData.length === 0) {
   setShops([]);
@@ -259,8 +244,7 @@ const { data: discountData, error: discountError } = await supabase
     shop_id,
     title,
     description,
-    discount_percent,
-    created_at
+    discount_percent
   `)
   .in("shop_id", shopIds)
   .eq("type", "discount")
@@ -292,59 +276,10 @@ const discountMap = new Map<string, ShopDiscount>();
   }
 });
 
-const { data: offerData, error: offerError } = await supabase
-  .from("shop_offers")
-  .select(`
-    id,
-    shop_id,
-    title,
-    description,
-    offer_kind,
-    offer_value,
-    minimum_order_value,
-    buy_quantity,
-    get_quantity,
-    created_at
-  `)
-  .in("shop_id", shopIds)
-  .eq("type", "offer")
-  .eq("is_enabled", true)
-  .lte("valid_from", today)
-  .gte("valid_until", today)
-  .order("created_at", {
-    ascending: false,
-  });
-
-if (offerError) {
-  console.error(
-    "SHOP OFFERS FETCH ERROR:",
-    offerError
-  );
-}
-
-const offerMap = new Map<string, ShopOffer>();
-
-(offerData || []).forEach((offer) => {
-  if (!offerMap.has(offer.shop_id)) {
-    offerMap.set(offer.shop_id, {
-      id: offer.id,
-      title: offer.title,
-      description: offer.description,
-      offer_kind: offer.offer_kind,
-      offer_value: offer.offer_value,
-      minimum_order_value: offer.minimum_order_value,
-      buy_quantity: offer.buy_quantity,
-      get_quantity: offer.get_quantity,
-    });
-  }
-});
-
 const shopsWithDiscounts = shopsData.map((shop) => ({
   ...shop,
   activeDiscount:
     discountMap.get(shop.id) ?? null,
-  activeOffer:
-    offerMap.get(shop.id) ?? null,
 }));
 
 setShops(shopsWithDiscounts);
@@ -788,6 +723,8 @@ const pageDescription = selectedCategory
 
                       {/* OPEN / CLOSED */}
 
+                  {/* OPEN / CLOSED */}
+
 <div className="absolute left-4 top-4 z-20 rounded-full bg-white/90 px-3 py-1.5 text-[9px] font-bold backdrop-blur">
   <span
     className={
@@ -801,111 +738,46 @@ const pageDescription = selectedCategory
   {shopIsOpen ? "OPEN NOW" : "CLOSED"}
 </div>
 
-```tsx
-{/* SHOP PROMOTIONS */}
+{/* ACTIVE DISCOUNT */}
 
-<div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-1.5 sm:right-5">
-
-  {/* ACTIVE DISCOUNT */}
-
-  {shop.activeDiscount &&
-    shop.activeDiscount.discount_percent !== null && (
-      <div className="max-w-[170px] sm:max-w-[190px]">
-        <div className="rounded-[14px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_8px_25px_rgba(0,0,0,.20)] backdrop-blur-xl sm:px-3 sm:py-2.5">
-
-          <div className="flex items-center gap-1.5">
-
-            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35Z" />
-                <circle cx="7.5" cy="7.5" r="1" />
-              </svg>
-            </div>
-
-            <span className="text-[7px] font-black uppercase tracking-[0.12em] text-white/70">
-              Special offer
-            </span>
-
-          </div>
-
-          <div className="mt-1 text-[19px] font-black leading-none tracking-[-0.05em] sm:text-[21px]">
-            {shop.activeDiscount.discount_percent}% OFF
-          </div>
-
-          {shop.activeDiscount.title && (
-            <div className="mt-1 line-clamp-1 text-[9px] font-black leading-3.5 text-white sm:text-[10px]">
-              {shop.activeDiscount.title}
-            </div>
-          )}
-
-        </div>
-      </div>
-    )}
-
-  {/* ACTIVE OFFER */}
-
-  {shop.activeOffer && (
-    <div className="max-w-[130px] sm:max-w-[140px]">
-      <div className="rounded-[10px] border border-white/20 bg-white/92 px-2 py-1.5 text-black shadow-[0_8px_25px_rgba(0,0,0,.14)] backdrop-blur-xl">
+{shop.activeDiscount &&
+  shop.activeDiscount.discount_percent !== null && (
+<div className="absolute right-4 top-4 z-20 max-w-[170px] sm:right-5 sm:top-4 sm:max-w-[190px]">
+      <div className="rounded-[14px] border border-white/20 bg-black/45 px-2.5 py-2 text-white shadow-[0_8px_25px_rgba(0,0,0,.20)] backdrop-blur-xl sm:px-3 sm:py-2.5">
 
         <div className="flex items-center gap-1.5">
 
-          <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#159447] text-white">
+
             <svg
-              width="9"
-              height="9"
+              width="10"
+              height="10"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2.2"
+              strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0 0 0 0Z" />
+              <path d="M20.59 13.41 11 3.83V3H4v7h.83l9.58 9.59a2 2 0 0 0 2.83 0l3.35-3.35a2 2 0 0 0 0-2.83Z" />
               <circle cx="7.5" cy="7.5" r="1" />
             </svg>
+
           </div>
 
-          <span className="text-[6.5px] font-black uppercase tracking-[0.1em] text-[#159447]">
-            Special Deal
+          <span className="text-[7px] font-black uppercase tracking-[0.12em] text-white/70">
+            Special offer
           </span>
 
         </div>
 
-        {shop.activeOffer.offer_kind === "flat" &&
-          shop.activeOffer.offer_value !== null && (
-            <div className="mt-0.5 text-[12px] font-black leading-none tracking-[-0.03em]">
-              ₹{shop.activeOffer.offer_value} OFF
-            </div>
-          )}
+        <div className="mt-1 text-[19px] font-black leading-none tracking-[-0.05em] sm:text-[21px]">
+          {shop.activeDiscount.discount_percent}% OFF
+        </div>
 
-        {shop.activeOffer.offer_kind === "buy_get" &&
-          shop.activeOffer.buy_quantity !== null &&
-          shop.activeOffer.get_quantity !== null && (
-            <div className="mt-0.5 text-[10px] font-black leading-3">
-              BUY {shop.activeOffer.buy_quantity}
-              {" "}GET {shop.activeOffer.get_quantity}
-            </div>
-          )}
-
-        {shop.activeOffer.offer_kind === "free_item" && (
-          <div className="mt-0.5 text-[10px] font-black leading-3">
-            FREE ITEM
-          </div>
-        )}
-
-        {shop.activeOffer.title && (
-          <div className="mt-0.5 line-clamp-1 text-[7.5px] font-bold leading-3 text-black/55">
-            {shop.activeOffer.title}
+        {shop.activeDiscount.title && (
+          <div className="mt-1 line-clamp-1 text-[9px] font-black leading-3.5 text-white sm:text-[10px]">
+            {shop.activeDiscount.title}
           </div>
         )}
 
@@ -913,7 +785,6 @@ const pageDescription = selectedCategory
     </div>
   )}
 
-</div>
                       {/* RATING */}
 
                       {shop.rating !== null && (

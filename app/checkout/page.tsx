@@ -262,56 +262,56 @@ export default function CheckoutPage() {
     setPlacingOrder(false);
   };
 
-  /* UPI APP */
+ /* UPI APP */
 
-  const openUpiApp = (
-    app:
-      | "gpay"
-      | "phonepe"
-      | "paytm"
-      | "other"
-  ) => {
-    if (!cart) {
-      setError("Your cart is empty.");
-      return;
-    }
+const openUpiApp = (
+  app:
+    | "gpay"
+    | "phonepe"
+    | "paytm"
+    | "other"
+) => {
+  if (!cart) {
+    setError("Your cart is empty.");
+    return;
+  }
 
-    if (!profileComplete || !profile) {
-      setError(
-        "Please complete your profile before placing the order."
-      );
-      return;
-    }
+  if (!profileComplete || !profile) {
+    setError(
+      "Please complete your profile before placing the order."
+    );
+    return;
+  }
 
-    setError(null);
+  setError(null);
 
-    const amount =
-      Number(total).toFixed(2);
+  const amount = Number(total).toFixed(2);
 
-    const params =
-      `pa=gautampant43-1@okaxis` +
-      `&pn=Apna%20Shyampur` +
-      `&am=${amount}` +
-      `&cu=INR` +
-      `&tn=Apna%20Shyampur%20Order`;
+  const transactionRef =
+    `AS${Date.now()}${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
 
-    const upiUrls = {
-      gpay:
-        `tez://upi/pay?${params}`,
+  const params =
+    `pa=${encodeURIComponent("gautampant43-1@okaxis")}` +
+    `&pn=${encodeURIComponent("Apna Shyampur")}` +
+    `&tr=${encodeURIComponent(transactionRef)}` +
+    `&tn=${encodeURIComponent("Apna Shyampur Order")}` +
+    `&am=${encodeURIComponent(amount)}` +
+    `&cu=INR`;
 
-      phonepe:
-        `phonepe://pay?${params}`,
+  const upiUrls = {
+    gpay: `gpay://upi/pay?${params}`,
 
-      paytm:
-        `paytmmp://pay?${params}`,
+    phonepe: `phonepe://pay?${params}`,
 
-      other:
-        `upi://pay?${params}`,
-    };
+    paytm: `paytmmp://pay?${params}`,
 
-    window.location.href =
-      upiUrls[app];
+    other: `upi://pay?${params}`,
   };
+
+  window.location.href = upiUrls[app];
+};
 
   /* PAYMENT ACTION */
 

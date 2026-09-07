@@ -232,56 +232,109 @@ export default function CheckoutPage() {
     ).format(Math.round(value));
   };
 
-  /* PAYMENT */
+  /* COD ORDER */
 
-  const handlePaymentSubmitted =
-    async () => {
-      if (placingOrder) return;
+  const handleCodOrder = async () => {
+    if (placingOrder) return;
 
-      if (!cart) {
-        setError("Your cart is empty.");
-        return;
-      }
+    if (!cart) {
+      setError("Your cart is empty.");
+      return;
+    }
 
-      if (!profileComplete || !profile) {
-        setError(
-          "Please complete your profile before placing the order."
-        );
-        return;
-      }
+    if (!profileComplete || !profile) {
+      setError(
+        "Please complete your profile before placing the order."
+      );
+      return;
+    }
 
-      setError(null);
-      setPlacingOrder(true);
+    setError(null);
+    setPlacingOrder(true);
 
-      /* COD */
+    setOrderNumber(
+      `AS${Date.now()
+        .toString()
+        .slice(-6)}`
+    );
 
-      if (paymentMethod === "cod") {
-        setOrderNumber(
-          `AS${Date.now()
-            .toString()
-            .slice(-6)}`
-        );
+    setOrderCreated(true);
+    setPlacingOrder(false);
+  };
 
-        setOrderCreated(true);
-        setPlacingOrder(false);
+  /* UPI APP */
 
-        return;
-      }
+  const openUpiApp = (
+    app:
+      | "gpay"
+      | "phonepe"
+      | "paytm"
+      | "other"
+  ) => {
+    if (!cart) {
+      setError("Your cart is empty.");
+      return;
+    }
 
-      /* UPI */
+    if (!profileComplete || !profile) {
+      setError(
+        "Please complete your profile before placing the order."
+      );
+      return;
+    }
 
-      const amount =
-        Number(total).toFixed(2);
+    setError(null);
 
-      const upiUrl =
-        `upi://pay?pa=gautampant43-1@okaxis` +
-        `&pn=Apna%20Shyampur` +
-        `&am=${amount}` +
-        `&cu=INR` +
-        `&tn=Apna%20Shyampur%20Order`;
+    const amount =
+      Number(total).toFixed(2);
 
-      window.location.href = upiUrl;
+    const params =
+      `pa=gautampant43-1@okaxis` +
+      `&pn=Apna%20Shyampur` +
+      `&am=${amount}` +
+      `&cu=INR` +
+      `&tn=Apna%20Shyampur%20Order`;
+
+    const upiUrls = {
+      gpay:
+        `tez://upi/pay?${params}`,
+
+      phonepe:
+        `phonepe://pay?${params}`,
+
+      paytm:
+        `paytmmp://pay?${params}`,
+
+      other:
+        `upi://pay?${params}`,
     };
+
+    window.location.href =
+      upiUrls[app];
+  };
+
+  /* PAYMENT ACTION */
+
+  const handlePaymentSubmitted = async () => {
+    if (placingOrder) return;
+
+    if (paymentMethod === "cod") {
+      await handleCodOrder();
+      return;
+    }
+
+    const upiApps =
+      document.getElementById(
+        "upi-apps"
+      );
+
+    if (upiApps) {
+      upiApps.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  };
 
   /* LOADING */
 
@@ -310,13 +363,17 @@ export default function CheckoutPage() {
 
                 <div className="mt-1 flex items-center gap-1.5 text-[7px] font-bold tracking-[0.12em] text-black/45 sm:text-[8px]">
                   <span>LOCALS</span>
+
                   <span className="text-[#159447]">
                     •
                   </span>
+
                   <span>TRUSTED</span>
+
                   <span className="text-[#159447]">
                     •
                   </span>
+
                   <span>FAST</span>
                 </div>
 
@@ -790,7 +847,7 @@ export default function CheckoutPage() {
 
           </div>
 
-          {/* PAYMENT ACTION */}
+          {/* PAYMENT BOX */}
 
           <div className="mt-6 rounded-[20px] border border-black/[0.06] bg-[#f5f6f4] p-5">
 
@@ -802,9 +859,10 @@ export default function CheckoutPage() {
 
               <button
                 type="button"
-                onClick={() =>
-                  setPaymentMethod("upi")
-                }
+                onClick={() => {
+                  setPaymentMethod("upi");
+                  setError(null);
+                }}
                 className={`rounded-[16px] border p-4 text-left transition ${
                   paymentMethod === "upi"
                     ? "border-[#159447] bg-[#eef8f1]"
@@ -834,8 +892,7 @@ export default function CheckoutPage() {
                     }`}
                   >
 
-                    {paymentMethod ===
-                      "upi" && (
+                    {paymentMethod === "upi" && (
                       <div className="h-2 w-2 rounded-full bg-white" />
                     )}
 
@@ -849,9 +906,10 @@ export default function CheckoutPage() {
 
               <button
                 type="button"
-                onClick={() =>
-                  setPaymentMethod("cod")
-                }
+                onClick={() => {
+                  setPaymentMethod("cod");
+                  setError(null);
+                }}
                 className={`rounded-[16px] border p-4 text-left transition ${
                   paymentMethod === "cod"
                     ? "border-[#159447] bg-[#eef8f1]"
@@ -881,8 +939,7 @@ export default function CheckoutPage() {
                     }`}
                   >
 
-                    {paymentMethod ===
-                      "cod" && (
+                    {paymentMethod === "cod" && (
                       <div className="h-2 w-2 rounded-full bg-white" />
                     )}
 
@@ -906,74 +963,197 @@ export default function CheckoutPage() {
                 ₹{formatPrice(total)}
               </p>
 
-              <p className="mx-auto mt-2 max-w-[320px] text-[9px] leading-4 text-black/45">
-
-                {paymentMethod === "upi"
-                  ? "Tap the button below to open your UPI app and pay the exact amount."
-                  : "Pay the exact amount in cash when your order is delivered."}
-
-              </p>
-
             </div>
 
-            {/* PAYMENT BUTTON */}
+            {/* UPI APPS */}
 
-            <button
-              type="button"
-              disabled={
-                !profileComplete ||
-                placingOrder
-              }
-              onClick={
-                handlePaymentSubmitted
-              }
-              className={`mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] text-[10px] font-black transition ${
-                profileComplete &&
-                !placingOrder
-                  ? "bg-[#159447] text-white shadow-[0_8px_22px_rgba(21,148,71,.18)] hover:bg-[#117d3c] active:scale-[0.98]"
-                  : "cursor-not-allowed bg-black/[0.08] text-black/30"
-              }`}
-            >
+            {paymentMethod === "upi" && (
+              <div
+                id="upi-apps"
+                className="mt-6 scroll-mt-24"
+              >
 
-              {placingOrder
-                ? paymentMethod === "upi"
-                  ? "Opening UPI..."
-                  : "Placing Order..."
-                : paymentMethod === "upi"
-                  ? `Pay ₹${formatPrice(
-                      total
-                    )}`
+                <p className="text-center text-[9px] font-black uppercase tracking-[0.08em] text-black/35">
+                  Choose UPI App
+                </p>
+
+                <p className="mx-auto mt-1 max-w-[320px] text-center text-[8px] font-semibold leading-4 text-black/35">
+                  Select the app you want to use for payment.
+                </p>
+
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+
+                  {/* GOOGLE PAY */}
+
+                  <button
+                    type="button"
+                    disabled={!profileComplete}
+                    onClick={() =>
+                      openUpiApp("gpay")
+                    }
+                    className="flex min-h-[82px] flex-col items-center justify-center rounded-[15px] border border-black/[0.08] bg-white px-2 py-3 transition hover:border-black/15 hover:bg-black/[0.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+
+                  <div className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-black/[0.06] bg-white shadow-sm">
+  <img
+    src="/g-pay.jpg"
+    alt="Google Pay"
+    className="h-7 w-7 object-contain"
+  />
+</div>
+
+                    <span className="mt-2 text-[9px] font-black">
+                      Google Pay
+                    </span>
+
+                  </button>
+
+                  {/* PHONEPE */}
+
+                  <button
+                    type="button"
+                    disabled={!profileComplete}
+                    onClick={() =>
+                      openUpiApp("phonepe")
+                    }
+                    className="flex min-h-[82px] flex-col items-center justify-center rounded-[15px] border border-black/[0.08] bg-white px-2 py-3 transition hover:border-black/15 hover:bg-black/[0.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+
+                    <div className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-black/[0.06] bg-white shadow-sm">
+  <img
+    src="/phonepe.png"
+    alt="PhonePe"
+    className="h-7 w-7 object-contain"
+  />
+</div>
+
+                    <span className="mt-2 text-[9px] font-black">
+                      PhonePe
+                    </span>
+
+                  </button>
+
+                  {/* PAYTM */}
+
+                  <button
+                    type="button"
+                    disabled={!profileComplete}
+                    onClick={() =>
+                      openUpiApp("paytm")
+                    }
+                    className="flex min-h-[82px] flex-col items-center justify-center rounded-[15px] border border-black/[0.08] bg-white px-2 py-3 transition hover:border-black/15 hover:bg-black/[0.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+
+                  <div className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-black/[0.06] bg-white shadow-sm">
+  <img
+    src="/paytm.webp"
+    alt="Paytm"
+    className="h-7 w-7 object-contain"
+  />
+</div>
+
+                    <span className="mt-2 text-[9px] font-black">
+                      Paytm
+                    </span>
+
+                  </button>
+
+                  {/* OTHER UPI */}
+
+                  <button
+                    type="button"
+                    disabled={!profileComplete}
+                    onClick={() =>
+                      openUpiApp("other")
+                    }
+                    className="flex min-h-[82px] flex-col items-center justify-center rounded-[15px] border border-black/[0.08] bg-white px-2 py-3 transition hover:border-black/15 hover:bg-black/[0.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+
+                  <div className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-black/[0.06] bg-white shadow-sm">
+  <img
+    src="/others.png"
+    alt="Other UPI"
+    className="h-6 w-6 object-contain"
+  />
+</div>
+
+                    <span className="mt-2 text-[9px] font-black">
+                      Other UPI
+                    </span>
+
+                  </button>
+
+                </div>
+
+                <p className="mt-3 text-center text-[8px] font-semibold leading-4 text-black/30">
+                  Google Pay • PhonePe • Paytm • Other UPI apps
+                </p>
+
+              </div>
+            )}
+
+            {/* COD MESSAGE */}
+
+            {paymentMethod === "cod" && (
+              <p className="mx-auto mt-4 max-w-[320px] text-center text-[9px] leading-4 text-black/45">
+                Pay the exact amount in cash when your order is delivered.
+              </p>
+            )}
+
+            {/* COD BUTTON */}
+
+            {paymentMethod === "cod" && (
+              <button
+                type="button"
+                disabled={
+                  !profileComplete ||
+                  placingOrder
+                }
+                onClick={
+                  handlePaymentSubmitted
+                }
+                className={`mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] text-[10px] font-black transition ${
+                  profileComplete &&
+                  !placingOrder
+                    ? "bg-[#159447] text-white shadow-[0_8px_22px_rgba(21,148,71,.18)] hover:bg-[#117d3c] active:scale-[0.98]"
+                    : "cursor-not-allowed bg-black/[0.08] text-black/30"
+                }`}
+              >
+
+                {placingOrder
+                  ? "Placing Order..."
                   : "Place COD Order"}
 
-              {!placingOrder && (
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M5 12h14" />
-                  <path d="m13 6 6 6-6 6" />
-                </svg>
-              )}
+                {!placingOrder && (
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M5 12h14" />
+                    <path d="m13 6 6 6-6 6" />
+                  </svg>
+                )}
 
-            </button>
-
-            {/* PAYMENT INFO */}
-
-            <p className="mt-3 text-center text-[8px] font-semibold text-black/30">
-
-              {paymentMethod === "upi"
-                ? "Google Pay • PhonePe • Paytm • Other UPI apps"
-                : "Cash payment at the time of delivery"}
-
-            </p>
+              </button>
+            )}
 
           </div>
+
+          {/* PAYMENT INFO */}
+
+          <p className="mt-3 text-center text-[8px] font-semibold text-black/30">
+
+            {paymentMethod === "upi"
+              ? "Choose your preferred UPI app to continue"
+              : "Cash payment at the time of delivery"}
+
+          </p>
 
           {/* PAYMENT WARNING */}
 
@@ -996,7 +1176,7 @@ export default function CheckoutPage() {
                 <p className="mt-1 text-[9px] leading-4 text-black/50">
 
                   {paymentMethod === "upi"
-                    ? 'After making the payment, tap “I\'ve Paid”. Your payment will be verified before the order is sent to the shop.'
+                    ? "Choose Google Pay, PhonePe, Paytm or another UPI app above and complete the payment for the exact amount."
                     : "Keep the exact amount ready. You will pay the delivery person when your order arrives."}
 
                 </p>
@@ -1016,7 +1196,7 @@ export default function CheckoutPage() {
           <p className="text-[8px] font-bold text-black/30">
 
             {paymentMethod === "upi"
-              ? "Your order will be processed after payment verification."
+              ? "Complete your payment using your preferred UPI app."
               : "Your COD order will be processed after confirmation."}
 
           </p>
@@ -1091,13 +1271,9 @@ export default function CheckoutPage() {
           >
 
             {placingOrder
-              ? paymentMethod === "upi"
-                ? "Opening UPI..."
-                : "Placing Order..."
+              ? "Placing Order..."
               : paymentMethod === "upi"
-                ? `Pay ₹${formatPrice(
-                    total
-                  )}`
+                ? "Choose UPI App"
                 : "Place COD Order"}
 
             {!placingOrder && (
@@ -1176,7 +1352,7 @@ function PhoneIcon() {
       strokeLinejoin="round"
       className="mt-0.5 shrink-0 text-black/30"
     >
-      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92z" />
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 0 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92z" />
     </svg>
   );
 }

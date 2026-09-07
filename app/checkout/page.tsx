@@ -588,7 +588,20 @@ const { data: orderData, error: orderError } =
     .single();
 
 if (orderError) {
-  throw orderError;
+  console.error("ORDER INSERT ERROR:", {
+    code: orderError.code,
+    message: orderError.message,
+    details: orderError.details,
+    hint: orderError.hint,
+  });
+
+  throw new Error(
+    `Order save failed: ${orderError.message}${
+      orderError.details
+        ? ` — ${orderError.details}`
+        : ""
+    }`
+  );
 }
 
 setOrderNumber(

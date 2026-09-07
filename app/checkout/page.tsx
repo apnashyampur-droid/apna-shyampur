@@ -5,6 +5,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -32,6 +33,67 @@ type Profile = {
   latitude: number | null;
   longitude: number | null;
 };
+
+type RazorpaySuccessResponse = {
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
+};
+
+type RazorpayFailureResponse = {
+  error?: {
+    code?: string;
+    description?: string;
+    source?: string;
+    step?: string;
+    reason?: string;
+    metadata?: {
+      order_id?: string;
+      payment_id?: string;
+    };
+  };
+};
+
+type RazorpayOptions = {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  prefill?: {
+    name?: string;
+    contact?: string;
+    email?: string;
+  };
+  theme?: {
+    color?: string;
+  };
+  modal?: {
+    ondismiss?: () => void;
+  };
+  handler: (
+    response: RazorpaySuccessResponse
+  ) => void | Promise<void>;
+};
+
+type RazorpayInstance = {
+  open: () => void;
+  on: (
+    event: string,
+    callback: (
+      response: RazorpayFailureResponse
+    ) => void
+  ) => void;
+};
+
+declare global {
+  interface Window {
+    Razorpay?: new (
+      options: RazorpayOptions
+    ) => RazorpayInstance;
+  }
+}
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -252,89 +314,309 @@ export default function CheckoutPage() {
     setError(null);
     setPlacingOrder(true);
 
-    setOrderNumber(
-      `AS${Date.now()
-        .toString()
-        .slice(-6)}`
-    );
+    try {
+      /*
+       * Existing COD flow kept intact.
+       *
+       * Actual Supabase order creation
+       * can be connected to the existing
+       * orders schema separately.
+       */
 
-    setOrderCreated(true);
-    setPlacingOrder(false);
+      setOrderNumber(
+        `AS${Date.now()
+          .toString()
+          .slice(-6)}`
+      );
+
+      setOrderCreated(true);
+    } catch (err) {
+      console.error(
+        "COD order error:",
+        err
+      );
+
+      setError(
+        "Unable to place your order. Please try again."
+      );
+    } finally {
+      setPlacingOrder(false);
+    }
   };
 
- /* UPI APP */
+  /* RAZORPAY PAYMENT */
 
-const openUpiApp = (
-  app:
-    | "gpay"
-    | "phonepe"
-    | "paytm"
-    | "other"
-) => {
-  if (!cart) {
-    setError("Your cart is empty.");
-    return;
-  }
-
-  if (!profileComplete || !profile) {
-    setError(
-      "Please complete your profile before placing the order."
-    );
-    return;
-  }
-
-  setError(null);
-
-  const amount = Number(total).toFixed(2);
-
-  const transactionRef =
-    `AS${Date.now()}${Math.random()
-      .toString(36)
-      .slice(2, 8)}`;
-
-  const params =
-    `pa=${encodeURIComponent("gautampant43-1@okaxis")}` +
-    `&pn=${encodeURIComponent("Apna Shyampur")}` +
-    `&tr=${encodeURIComponent(transactionRef)}` +
-    `&tn=${encodeURIComponent("Apna Shyampur Order")}` +
-    `&am=${encodeURIComponent(amount)}` +
-    `&cu=INR`;
-
-  const upiUrls = {
-    gpay: `gpay://upi/pay?${params}`,
-
-    phonepe: `phonepe://pay?${params}`,
-
-    paytm: `paytmmp://pay?${params}`,
-
-    other: `upi://pay?${params}`,
-  };
-
-  window.location.href = upiUrls[app];
-};
-
-  /* PAYMENT ACTION */
-
-  const handlePaymentSubmitted = async () => {
+  const handleRazorpayPayment = async () => {
     if (placingOrder) return;
 
-    if (paymentMethod === "cod") {
-      await handleCodOrder();
+    if (!cart) {
+      setError("Your cart is empty.");
       return;
     }
 
-    const upiApps =
-      document.getElementById(
-        "upi-apps"
+    if (!profileComplete || !profile) {
+      setError(
+        "Please complete your profile before placing the order."
+      );
+      return;
+    }
+
+    setError(null);
+    setPlacingOrder(true);
+
+    try {
+      /*
+       * Razorpay Checkout script
+       * must already be available.
+       */
+
+      if (!window.Razorpay) {
+        throw new Error(
+          "Payment gateway is still loading. Please try again."
+        );
+      }
+
+      const keyId =
+        process.env
+          .NEXT_PUBLIC_RAZORPAY_KEY_ID;
+
+      if (!keyId) {
+        throw new Error(
+          "Razorpay payment key is not configured."
+        );
+      }
+
+      /*
+       * Razorpay accepts amount in paise.
+       *
+       * Example:
+       * ₹100 -> 10000
+       */
+
+      const amountInPaise =
+        Math.round(total * 100);
+
+      if (
+        !Number.isInteger(amountInPaise) ||
+        amountInPaise < 100
+      ) {
+        throw new Error(
+          "Invalid payment amount."
+        );
+      }
+
+      /* CREATE RAZORPAY ORDER */
+
+      const createOrderResponse =
+        await fetch(
+          "/api/razorpay/create-order",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              amount: amountInPaise,
+            }),
+          }
+        );
+
+      const createOrderData =
+        await createOrderResponse.json();
+
+      if (
+        !createOrderResponse.ok ||
+        !createOrderData?.success ||
+        !createOrderData?.orderId
+      ) {
+        throw new Error(
+          createOrderData?.error ||
+            "Unable to create payment order."
+        );
+      }
+
+      const razorpayOrderId =
+        createOrderData.orderId;
+
+      /* RAZORPAY OPTIONS */
+
+      const options: RazorpayOptions = {
+        key: keyId,
+
+        amount:
+          createOrderData.amount,
+
+        currency:
+          createOrderData.currency ||
+          "INR",
+
+        name: "Apna Shyampur",
+
+        description:
+          "Apna Shyampur Order",
+
+        order_id:
+          razorpayOrderId,
+
+        prefill: {
+          name:
+            profile.full_name ||
+            "",
+
+          contact:
+            profile.phone ||
+            "",
+        },
+
+        theme: {
+          color: "#159447",
+        },
+
+        modal: {
+          ondismiss: () => {
+            setPlacingOrder(false);
+            setError(null);
+          },
+        },
+
+        handler:
+          async (
+            response
+          ) => {
+            try {
+              setError(null);
+
+              /*
+               * Send Razorpay response
+               * to our server.
+               */
+
+              const verifyResponse =
+                await fetch(
+                  "/api/razorpay/verify-payment",
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type":
+                        "application/json",
+                    },
+                    body: JSON.stringify(
+                      response
+                    ),
+                  }
+                );
+
+              const verifyData =
+                await verifyResponse.json();
+
+              if (
+                !verifyResponse.ok ||
+                !verifyData?.success
+              ) {
+                throw new Error(
+                  verifyData?.error ||
+                    "Payment verification failed."
+                );
+              }
+
+              /*
+               * Payment signature has now
+               * been verified by our server.
+               *
+               * Actual Supabase order creation
+               * should happen here once the
+               * final orders table/schema is
+               * connected.
+               */
+
+              setOrderNumber(
+                `AS${Date.now()
+                  .toString()
+                  .slice(-6)}`
+              );
+
+              setOrderCreated(true);
+              setPlacingOrder(false);
+            } catch (err) {
+              console.error(
+                "Payment verification error:",
+                err
+              );
+
+              setError(
+                err instanceof Error
+                  ? err.message
+                  : "Payment verification failed. Please contact support if money was deducted."
+              );
+
+              setPlacingOrder(false);
+            }
+          },
+      };
+
+      const razorpay =
+        new window.Razorpay(
+          options
+        );
+
+      /*
+       * Payment failed event.
+       */
+
+      razorpay.on(
+        "payment.failed",
+        (
+          response
+        ) => {
+          console.error(
+            "Razorpay payment failed:",
+            response
+          );
+
+          const description =
+            response?.error
+              ?.description;
+
+          setError(
+            description ||
+              "Payment failed. Please try again."
+          );
+
+          setPlacingOrder(false);
+        }
       );
 
-    if (upiApps) {
-      upiApps.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
+      razorpay.open();
+    } catch (err) {
+      console.error(
+        "Razorpay payment error:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to start payment. Please try again."
+      );
+
+      setPlacingOrder(false);
     }
   };
+
+  /* PAYMENT ACTION */
+
+  const handlePaymentSubmitted =
+    async () => {
+      if (placingOrder) return;
+
+      if (paymentMethod === "cod") {
+        await handleCodOrder();
+        return;
+      }
+
+      await handleRazorpayPayment();
+    };
 
   /* LOADING */
 
@@ -343,6 +625,7 @@ const openUpiApp = (
       <main className="min-h-screen bg-[#f5f6f4] text-[#111]">
 
         <header className="border-b border-black/[0.06] bg-[#f5f6f4]">
+
           <div className="mx-auto flex h-[70px] max-w-[1100px] items-center justify-between px-5 sm:px-8">
 
             <div className="flex items-center gap-3">
@@ -382,6 +665,7 @@ const openUpiApp = (
             </div>
 
           </div>
+
         </header>
 
         <div className="mx-auto max-w-[760px] px-4 py-5 sm:px-6">
@@ -445,14 +729,14 @@ const openUpiApp = (
               <h1 className="mt-6 text-[25px] font-black tracking-[-0.05em]">
                 {paymentMethod === "cod"
                   ? "Order placed"
-                  : "Payment submitted"}
+                  : "Payment successful"}
               </h1>
 
               <p className="mx-auto mt-2 max-w-[400px] text-[11px] leading-5 text-black/50">
 
                 {paymentMethod === "cod"
                   ? "Your COD order has been placed successfully. You will pay when your order is delivered."
-                  : "Your payment has been submitted for verification. Your order will be processed after the payment is verified."}
+                  : "Your payment has been successfully verified. Your order can now be processed."}
 
               </p>
 
@@ -472,7 +756,7 @@ const openUpiApp = (
 
                   {paymentMethod === "cod"
                     ? "Cash on Delivery"
-                    : "Payment verification pending"}
+                    : "Payment verified"}
 
                 </p>
 
@@ -480,7 +764,7 @@ const openUpiApp = (
 
                   {paymentMethod === "cod"
                     ? "Please keep the exact amount ready. You will pay the delivery person when your order arrives."
-                    : "We will verify your payment before sending the order to the shop."}
+                    : "Your Razorpay payment has been verified successfully."}
 
                 </p>
 
@@ -530,6 +814,11 @@ const openUpiApp = (
 
   return (
     <main className="min-h-screen bg-[#f5f6f4] pb-28 text-[#111]">
+
+      <Script
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        strategy="afterInteractive"
+      />
 
       <div className="mx-auto max-w-[760px] px-4 py-5 sm:px-6">
 
@@ -965,128 +1254,33 @@ const openUpiApp = (
 
             </div>
 
-            {/* UPI APPS */}
+            {/* RAZORPAY UPI INFO */}
 
             {paymentMethod === "upi" && (
-              <div
-                id="upi-apps"
-                className="mt-6 scroll-mt-24"
-              >
+              <div className="mt-6 rounded-[18px] border border-black/[0.06] bg-white px-4 py-4">
 
-                <p className="text-center text-[9px] font-black uppercase tracking-[0.08em] text-black/35">
-                  Choose UPI App
-                </p>
+                <div className="flex items-center justify-center gap-2">
 
-                <p className="mx-auto mt-1 max-w-[320px] text-center text-[8px] font-semibold leading-4 text-black/35">
-                  Select the app you want to use for payment.
-                </p>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eef8f1] text-[#159447]">
+                    <UpiIcon />
+                  </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="text-left">
 
-                  {/* GOOGLE PAY */}
+                    <p className="text-[10px] font-black">
+                      Secure UPI Payment
+                    </p>
 
-                  <button
-                    type="button"
-                    disabled={!profileComplete}
-                    onClick={() =>
-                      openUpiApp("gpay")
-                    }
-                    className="flex min-h-[82px] flex-col items-center justify-center rounded-[15px] border border-black/[0.08] bg-white px-2 py-3 transition hover:border-black/15 hover:bg-black/[0.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
+                    <p className="mt-0.5 text-[8px] font-semibold text-black/40">
+                      Powered by Razorpay
+                    </p>
 
-                  <div className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-black/[0.06] bg-white shadow-sm">
-  <img
-    src="/g-pay.jpg"
-    alt="Google Pay"
-    className="h-7 w-7 object-contain"
-  />
-</div>
-
-                    <span className="mt-2 text-[9px] font-black">
-                      Google Pay
-                    </span>
-
-                  </button>
-
-                  {/* PHONEPE */}
-
-                  <button
-                    type="button"
-                    disabled={!profileComplete}
-                    onClick={() =>
-                      openUpiApp("phonepe")
-                    }
-                    className="flex min-h-[82px] flex-col items-center justify-center rounded-[15px] border border-black/[0.08] bg-white px-2 py-3 transition hover:border-black/15 hover:bg-black/[0.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-
-                    <div className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-black/[0.06] bg-white shadow-sm">
-  <img
-    src="/phonepe.png"
-    alt="PhonePe"
-    className="h-7 w-7 object-contain"
-  />
-</div>
-
-                    <span className="mt-2 text-[9px] font-black">
-                      PhonePe
-                    </span>
-
-                  </button>
-
-                  {/* PAYTM */}
-
-                  <button
-                    type="button"
-                    disabled={!profileComplete}
-                    onClick={() =>
-                      openUpiApp("paytm")
-                    }
-                    className="flex min-h-[82px] flex-col items-center justify-center rounded-[15px] border border-black/[0.08] bg-white px-2 py-3 transition hover:border-black/15 hover:bg-black/[0.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-
-                  <div className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-black/[0.06] bg-white shadow-sm">
-  <img
-    src="/paytm.webp"
-    alt="Paytm"
-    className="h-7 w-7 object-contain"
-  />
-</div>
-
-                    <span className="mt-2 text-[9px] font-black">
-                      Paytm
-                    </span>
-
-                  </button>
-
-                  {/* OTHER UPI */}
-
-                  <button
-                    type="button"
-                    disabled={!profileComplete}
-                    onClick={() =>
-                      openUpiApp("other")
-                    }
-                    className="flex min-h-[82px] flex-col items-center justify-center rounded-[15px] border border-black/[0.08] bg-white px-2 py-3 transition hover:border-black/15 hover:bg-black/[0.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-
-                  <div className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-black/[0.06] bg-white shadow-sm">
-  <img
-    src="/others.png"
-    alt="Other UPI"
-    className="h-6 w-6 object-contain"
-  />
-</div>
-
-                    <span className="mt-2 text-[9px] font-black">
-                      Other UPI
-                    </span>
-
-                  </button>
+                  </div>
 
                 </div>
 
-                <p className="mt-3 text-center text-[8px] font-semibold leading-4 text-black/30">
-                  Google Pay • PhonePe • Paytm • Other UPI apps
+                <p className="mx-auto mt-3 max-w-[330px] text-center text-[8px] font-semibold leading-4 text-black/35">
+                  Razorpay will open a secure checkout where you can choose your available UPI payment method.
                 </p>
 
               </div>
@@ -1150,7 +1344,7 @@ const openUpiApp = (
           <p className="mt-3 text-center text-[8px] font-semibold text-black/30">
 
             {paymentMethod === "upi"
-              ? "Choose your preferred UPI app to continue"
+              ? "Secure UPI payment through Razorpay Checkout"
               : "Cash payment at the time of delivery"}
 
           </p>
@@ -1168,7 +1362,7 @@ const openUpiApp = (
                 <p className="text-[10px] font-black">
 
                   {paymentMethod === "upi"
-                    ? "Pay the exact amount"
+                    ? "Secure online payment"
                     : "Keep cash ready"}
 
                 </p>
@@ -1176,7 +1370,7 @@ const openUpiApp = (
                 <p className="mt-1 text-[9px] leading-4 text-black/50">
 
                   {paymentMethod === "upi"
-                    ? "Choose Google Pay, PhonePe, Paytm or another UPI app above and complete the payment for the exact amount."
+                    ? "Your payment will open in Razorpay Checkout. Complete the payment there and return to Apna Shyampur."
                     : "Keep the exact amount ready. You will pay the delivery person when your order arrives."}
 
                 </p>
@@ -1196,7 +1390,7 @@ const openUpiApp = (
           <p className="text-[8px] font-bold text-black/30">
 
             {paymentMethod === "upi"
-              ? "Complete your payment using your preferred UPI app."
+              ? "Payments are securely processed through Razorpay."
               : "Your COD order will be processed after confirmation."}
 
           </p>
@@ -1271,9 +1465,9 @@ const openUpiApp = (
           >
 
             {placingOrder
-              ? "Placing Order..."
+              ? "Processing..."
               : paymentMethod === "upi"
-                ? "Choose UPI App"
+                ? "Pay with UPI"
                 : "Place COD Order"}
 
             {!placingOrder && (
@@ -1425,6 +1619,23 @@ function InfoIcon() {
       <path d="M12 16v-4" />
 
       <path d="M12 8h.01" />
+    </svg>
+  );
+}
+
+function UpiIcon() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M7 3h10l-2 7h4L9 21l2-8H7l2-10Z" />
     </svg>
   );
 }

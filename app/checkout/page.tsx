@@ -503,14 +503,100 @@ const handleRazorpayPayment = async () => {
               );
             }
 
-            setOrderNumber(
-              `AS${Date.now()
-                .toString()
-                .slice(-6)}`
-            );
+            const orderNumberValue = `AS${Date.now()
+  .toString()
+  .slice(-6)}`;
 
-            setOrderCreated(true);
-            setPlacingOrder(false);
+const orderItems = cart.items.map((item) => {
+  const finalPrice =
+    item.salePrice !== null
+      ? Number(item.salePrice)
+      : Number(item.price);
+
+  return {
+    product_id: item.productId,
+    product_name: item.productName,
+    quantity: item.quantity,
+    price: Number(item.price),
+    sale_price:
+      item.salePrice !== null
+        ? Number(item.salePrice)
+        : null,
+    line_total:
+      finalPrice * item.quantity,
+  };
+});
+
+const {
+  data: {
+    user,
+  },
+} = await supabase.auth.getUser();
+
+if (!user) {
+  throw new Error(
+    "Your session has expired. Please login again."
+  );
+}
+
+const { data: orderData, error: orderError } =
+  await supabase
+    .from("orders")
+    .insert({
+      order_number: orderNumberValue,
+
+      user_id: user.id,
+
+      shop_id: cart.shopId,
+
+      status: "placed",
+
+      payment_status: "paid",
+
+      payment_method: "online",
+
+      subtotal,
+
+      delivery_fee: deliveryCharge,
+
+      total_amount: total,
+
+      customer_name:
+        profile.full_name,
+
+      customer_phone:
+        profile.phone,
+
+      delivery_address:
+        profile.address,
+
+      delivery_latitude:
+        profile.latitude,
+
+      delivery_longitude:
+        profile.longitude,
+
+      razorpay_order_id:
+        response.razorpay_order_id,
+
+      razorpay_payment_id:
+        response.razorpay_payment_id,
+
+      items: orderItems,
+    })
+    .select("id, order_number")
+    .single();
+
+if (orderError) {
+  throw orderError;
+}
+
+setOrderNumber(
+  orderData.order_number
+);
+
+setOrderCreated(true);
+setPlacingOrder(false);
           } catch (err) {
             console.error(
               "Payment verification error:",

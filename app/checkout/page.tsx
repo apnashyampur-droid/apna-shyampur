@@ -159,7 +159,33 @@ export default function CheckoutPage() {
           return;
         }
 
-        setCart(parsedCart);
+       /* SHOP */
+
+const {
+  data: shopData,
+  error: shopError,
+} = await supabase
+  .from("shops")
+  .select("name")
+  .eq("id", parsedCart.shopId)
+  .maybeSingle();
+
+if (shopError) {
+  throw shopError;
+}
+
+if (!shopData?.name) {
+  throw new Error(
+    "Shop information could not be found."
+  );
+}
+
+const cartWithShop: SavedCart = {
+  ...parsedCart,
+  shopName: shopData.name,
+};
+
+setCart(cartWithShop);
 
         /* USER */
 
@@ -284,48 +310,171 @@ export default function CheckoutPage() {
     ).format(Math.round(value));
   };
 
-  /* COD ORDER */
+ /* COD ORDER */
 
-  const handleCodOrder = async () => {
-    if (placingOrder) return;
+const handleCodOrder = async () => {
+  if (placingOrder) return;
 
-    if (!cart) {
-      setError("Your cart is empty.");
-      return;
+  if (!cart) {
+    setError("Your cart is empty.");
+    return;
+  }
+
+  if (!profileComplete || !profile) {
+    setError(
+      "Please complete your profile before placing the order."
+    );
+    return;
+  }
+
+  setError(null);
+  setPlacingOrder(true);
+
+  try {
+    const {
+      data: {
+        user,
+      },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error(
+        "Your session has expired. Please login again."
+      );
     }
 
-    if (!profileComplete || !profile) {
-      setError(
-        "Please complete your profile before placing the order."
+    if (!cart.shopName) {
+      throw new Error(
+        "Shop information could not be found."
       );
-      return;
     }
 
-    setError(null);
-    setPlacingOrder(true);
+    const orderNumberValue = `AS${Date.now()
+      .toString()
+      .slice(-6)}`;
 
-    try {
+    const orderItems = cart.items.map((item) => {
+      const finalPrice =
+        item.salePrice !== null
+          ? Number(item.salePrice)
+          : Number(item.price);
 
-      setOrderNumber(
-        `AS${Date.now()
-          .toString()
-          .slice(-6)}`
-      );
+      return {
+        product_id: item.productId,
+        product_name: item.productName,
+        image_url: item.imageUrl,
+        quantity: item.quantity,
+        price: Number(item.price),
+        sale_price:
+          item.salePrice !== null
+            ? Number(item.salePrice)
+            : null,
+        line_total:
+          finalPrice * item.quantity,
+      };
+    });
 
-      setOrderCreated(true);
-    } catch (err) {
+    const {
+      data: orderData,
+      error: orderError,
+    } = await supabase
+      .from("orders")
+      .insert({
+        order_number: orderNumberValue,
+
+        user_id: user.id,
+
+        shop_id: cart.shopId,
+
+        shop_name: cart.shopName,
+
+        status: "pending",
+
+        payment_status: "pending",
+
+        payment_method: "cod",
+
+        subtotal,
+
+        delivery_fee: deliveryCharge,
+
+        total_amount: total,
+
+        customer_name:
+          profile.full_name,
+
+        customer_phone:
+          profile.phone,
+
+        delivery_address:
+          profile.address,
+
+        delivery_latitude:
+          profile.latitude,
+
+        delivery_longitude:
+          profile.longitude,
+
+        razorpay_order_id: null,
+
+        razorpay_payment_id: null,
+
+        items: orderItems,
+      })
+      .select("id, order_number")
+      .single();
+
+    if (orderError) {
       console.error(
-        "COD order error:",
-        err
+        "COD ORDER INSERT ERROR:",
+        {
+          code: orderError.code,
+          message: orderError.message,
+          details: orderError.details,
+          hint: orderError.hint,
+        }
       );
 
-      setError(
-        "Unable to place your order. Please try again."
+      throw new Error(
+        `Order save failed: ${orderError.message}${
+          orderError.details
+            ? ` — ${orderError.details}`
+            : ""
+        }`
       );
-    } finally {
-      setPlacingOrder(false);
     }
-  };
+
+    setOrderNumber(
+      orderData.order_number
+    );
+
+    setOrderCreated(true);
+
+    /*
+      Order successfully created.
+      Keep success screen visible for 3 seconds,
+      then automatically return to Home.
+    */
+
+    setTimeout(() => {
+      router.push("/");
+    }, 3000);
+  } catch (err) {
+    console.error(
+      "COD order error:",
+      err
+    );
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Unable to place your order. Please try again."
+    );
+
+    setPlacingOrder(false);
+  }
+};
 
   /* RAZORPAY PAYMENT */
 
@@ -514,17 +663,18 @@ const orderItems = cart.items.map((item) => {
       : Number(item.price);
 
   return {
-    product_id: item.productId,
-    product_name: item.productName,
-    quantity: item.quantity,
-    price: Number(item.price),
-    sale_price:
-      item.salePrice !== null
-        ? Number(item.salePrice)
-        : null,
-    line_total:
-      finalPrice * item.quantity,
-  };
+  product_id: item.productId,
+  product_name: item.productName,
+  image_url: item.imageUrl,
+  quantity: item.quantity,
+  price: Number(item.price),
+  sale_price:
+    item.salePrice !== null
+      ? Number(item.salePrice)
+      : null,
+  line_total:
+    finalPrice * item.quantity,
+};
 });
 
 const {
@@ -549,7 +699,9 @@ const { data: orderData, error: orderError } =
 
       shop_id: cart.shopId,
 
-      status: "pending",
+shop_name: cart.shopName,
+
+status: "pending",
 
       payment_status: "paid",
 
@@ -610,6 +762,11 @@ setOrderNumber(
 
 setOrderCreated(true);
 setPlacingOrder(false);
+
+setTimeout(() => {
+  router.push("/");
+}, 3000);
+
           } catch (err) {
             console.error(
               "Payment verification error:",
@@ -838,15 +995,9 @@ setPlacingOrder(false);
 
               </div>
 
-              <button
-                type="button"
-                onClick={() =>
-                  router.push("/orders")
-                }
-                className="mt-6 inline-flex h-11 items-center justify-center rounded-[13px] bg-[#159447] px-6 text-[10px] font-black text-white shadow-[0_8px_22px_rgba(21,148,71,.18)] transition hover:bg-[#117d3c] active:scale-[0.98]"
-              >
-                View Orders
-              </button>
+              <p className="mt-6 text-[9px] font-bold text-black/35">
+  Returning to home...
+</p>
 
             </section>
 
@@ -1382,9 +1533,30 @@ setPlacingOrder(false);
                 }`}
               >
 
-                {placingOrder
-                  ? "Placing Order..."
-                  : "Place COD Order"}
+                {placingOrder ? (
+  <>
+    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+    <span>Placing Order...</span>
+  </>
+) : (
+  <>
+    <span>Place COD Order</span>
+
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 12h14" />
+      <path d="m13 6 6 6-6 6" />
+    </svg>
+  </>
+)}
 
                 {!placingOrder && (
                   <svg

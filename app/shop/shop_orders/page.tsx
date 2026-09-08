@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -80,7 +81,7 @@ const HISTORY_STATUSES: OrderStatus[] = [
 const COMPLETED_VISIBLE_MS =
   24 * 60 * 60 * 1000;
 
-export default function ShopOrdersPage() {
+  function ShopOrdersContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -2432,5 +2433,21 @@ function LocationIcon() {
         r="2.5"
       />
     </svg>
+  );
+}
+
+ export default function ShopOrdersPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#f5f6f4] text-[#111]">
+          <div className="mx-auto max-w-[1050px] px-4 py-5 sm:px-6 lg:px-8">
+            <OrdersSkeleton />
+          </div>
+        </main>
+      }
+    >
+      <ShopOrdersContent />
+    </Suspense>
   );
 }

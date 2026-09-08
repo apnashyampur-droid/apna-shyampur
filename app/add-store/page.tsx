@@ -24,6 +24,9 @@ export default function AddStore() {
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
+  const [shopLatitude, setShopLatitude] = useState<number | null>(null);
+const [shopLongitude, setShopLongitude] = useState<number | null>(null);
+const [locationLoading, setLocationLoading] = useState(false);
   const [description, setDescription] = useState("");
   const [storeImage, setStoreImage] = useState<File | null>(null);
 const [storeImagePreview, setStoreImagePreview] = useState("");
@@ -157,6 +160,114 @@ const handleApplyCrop = async () => {
   }
 };
 
+const handleUseCurrentLocation = () => {
+  if (!navigator.geolocation) {
+    setErrors((prev) => ({
+      ...prev,
+      address: "Your browser does not support location services.",
+    }));
+    return;
+  }
+
+  setLocationLoading(true);
+
+  setErrors((prev) => ({
+    ...prev,
+    address: undefined,
+  }));
+
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+
+      try {
+        const response = await fetch(
+          `/api/geocode?lat=${encodeURIComponent(
+            latitude
+          )}&lng=${encodeURIComponent(longitude)}`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.address) {
+          console.error("Shop reverse geocoding failed:", data);
+
+          setErrors((prev) => ({
+            ...prev,
+            address:
+              data?.error ||
+              "We found your location, but couldn't get the shop address. Please try again.",
+          }));
+
+          return;
+        }
+
+        setShopLatitude(latitude);
+        setShopLongitude(longitude);
+        setAddress(data.address);
+
+        setErrors((prev) => ({
+          ...prev,
+          address: undefined,
+        }));
+      } catch (error) {
+        console.error(
+          "Shop reverse geocoding request failed:",
+          error
+        );
+
+        setErrors((prev) => ({
+          ...prev,
+          address:
+            "We found your location, but couldn't get the shop address. Please try again.",
+        }));
+      } finally {
+        setLocationLoading(false);
+      }
+    },
+    (error) => {
+      console.error("Shop geolocation error:", {
+        code: error.code,
+        message: error.message,
+      });
+
+      setLocationLoading(false);
+
+      if (error.code === 1) {
+        setErrors((prev) => ({
+          ...prev,
+          address:
+            "Location access was denied. Please allow location access for this site and try again.",
+        }));
+      } else if (error.code === 2) {
+        setErrors((prev) => ({
+          ...prev,
+          address:
+            "Your device could not determine your location. Please make sure Location is turned on and try again.",
+        }));
+      } else if (error.code === 3) {
+        setErrors((prev) => ({
+          ...prev,
+          address:
+            "We couldn't determine your shop location in time. Please try again.",
+        }));
+      } else {
+        setErrors((prev) => ({
+          ...prev,
+          address:
+            "We couldn't access your current location. Please try again.",
+        }));
+      }
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0,
+    }
+  );
+};
+
   const validateForm = () => {
     const newErrors: typeof errors = {};
 
@@ -194,9 +305,13 @@ const handleApplyCrop = async () => {
       newErrors.phone = "Enter a valid 10-digit mobile number";
     }
 
-    if (!address.trim()) {
-      newErrors.address = "Shop address is required";
-    }
+   if (
+  !address.trim() ||
+  shopLatitude === null ||
+  shopLongitude === null
+) {
+  newErrors.address = "Please set your shop location";
+}
 
     setErrors(newErrors);
 
@@ -308,7 +423,6 @@ const filePath = `${user.id}/${uniqueId}.${fileExtension}`;
       .from("store-images")
       .getPublicUrl(filePath);
 
-    // Submit store application
 const applicationData = {
   user_id: user.id,
   store_name: storeName.trim(),
@@ -317,6 +431,8 @@ const applicationData = {
   owner_name: ownerName.trim(),
   phone: phone.replace(/\s/g, ""),
   address: address.trim(),
+    latitude: shopLatitude,
+  longitude: shopLongitude,
   opening_time: openingTime,
   closing_time: closingTime,
   store_image_url: publicUrl,
@@ -830,104 +946,163 @@ if (existingStore) {
               </div>
             </div>
 
-            {/* LOCATION */}
+          {/* LOCATION */}
 
-            <div className="border-t border-black/[0.06] pt-8">
-              <div className="mb-4 flex items-center gap-2">
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#111] text-[9px] font-black text-white">
-                  3
-                </div>
+<div className="border-t border-black/[0.06] pt-8">
+  <div className="mb-4 flex items-center gap-2">
+    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#111] text-[9px] font-black text-white">
+      3
+    </div>
 
-                <h3 className="text-[13px] font-black">
-                  Shop location
-                </h3>
-              </div>
+    <h3 className="text-[13px] font-black">
+      Shop location
+    </h3>
+  </div>
 
-              <div
-                className={`rounded-[18px] border p-4 ${
-                  errors.address
-                    ? "border-red-200 bg-red-50/30"
-                    : "border-black/[0.07] bg-[#fafbf9]"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eaf5ec] text-[#159447]">
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
-                      <circle cx="12" cy="10" r="2.5" />
-                    </svg>
-                  </div>
+  <div
+    className={`rounded-[18px] border p-4 ${
+      errors.address
+        ? "border-red-200 bg-red-50/30"
+        : "border-black/[0.07] bg-[#fafbf9]"
+    }`}
+  >
+    <div className="flex items-start gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eaf5ec] text-[#159447]">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+          <circle cx="12" cy="10" r="2.5" />
+        </svg>
+      </div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] font-black">
-                      Where is your shop located?
-                    </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] font-black">
+          Where is your shop located?
+          <span className="ml-1 text-[#159447]">*</span>
+        </div>
 
-                    <p className="mt-1 text-[9px] leading-4 text-black/40">
-                      Enter your complete shop address. We will use this to
-                      place your shop in the right local area.
-                    </p>
-                  </div>
-                </div>
+        <p className="mt-1 text-[9px] leading-4 text-black/40">
+          Your shop location is required so customers can see accurate
+          distance and delivery availability.
+        </p>
+      </div>
+    </div>
 
-                <textarea
-                  value={address}
-                  onChange={(e) => {
-                    setAddress(e.target.value);
+    {address ? (
+      <div className="mt-4 rounded-[13px] border border-[#159447]/15 bg-white px-4 py-3">
+        <div className="flex items-start gap-2.5">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="mt-0.5 shrink-0 text-[#159447]"
+          >
+            <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+            <circle cx="12" cy="10" r="2.5" />
+          </svg>
 
-                    if (errors.address) {
-                      setErrors((prev) => ({
-                        ...prev,
-                        address: undefined,
-                      }));
-                    }
-                  }}
-                  rows={3}
-                  placeholder="Shop no., market / road, village or area, Shyampur..."
-                  className={`mt-4 w-full resize-none rounded-[13px] border bg-white px-4 py-3 text-[12px] font-medium outline-none transition placeholder:text-black/25 ${
-                    errors.address
-                      ? "border-red-300"
-                      : "border-black/[0.08] focus:border-[#159447]/40"
-                  }`}
-                />
-
-                {errors.address && (
-                  <p className="mt-1.5 text-[9px] font-semibold text-red-500">
-                    {errors.address}
-                  </p>
-                )}
-
-                <button
-                  type="button"
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[#159447]/20 bg-[#159447]/[0.05] px-3 py-2 text-[9px] font-black text-[#159447] transition hover:bg-[#159447]/10"
-                >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M12 19V5" />
-                    <path d="m5 12 7-7 7 7" />
-                  </svg>
-
-                  Use current location
-                </button>
-              </div>
+          <div className="min-w-0">
+            <div className="text-[9px] font-black text-[#159447]">
+              Shop location set
             </div>
+
+            <p className="mt-1 text-[10px] leading-4 text-black/55">
+              {address}
+            </p>
+          </div>
+        </div>
+      </div>
+    ) : (
+      <div className="mt-4 rounded-[13px] border border-dashed border-black/[0.10] bg-white px-4 py-4 text-center">
+        <div className="text-[10px] font-bold text-black/40">
+          Shop location not set
+        </div>
+
+        <p className="mt-1 text-[8px] text-black/30">
+          Stand at your shop and use your current location.
+        </p>
+      </div>
+    )}
+
+    <button
+      type="button"
+      onClick={handleUseCurrentLocation}
+      disabled={locationLoading}
+      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[13px] bg-[#111] px-4 py-3 text-[10px] font-black text-white transition hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {locationLoading ? (
+        <>
+          <svg
+            className="h-3.5 w-3.5 animate-spin"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="9"
+              stroke="currentColor"
+              strokeWidth="2"
+              opacity=".25"
+            />
+            <path
+              d="M21 12a9 9 0 0 0-9-9"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+
+          Detecting shop location...
+        </>
+      ) : (
+        <>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 2v4" />
+            <path d="M12 18v4" />
+            <path d="m4.93 4.93 2.83 2.83" />
+            <path d="m16.24 16.24 2.83 2.83" />
+            <path d="M2 12h4" />
+            <path d="M18 12h4" />
+            <path d="m4.93 19.07 2.83-2.83" />
+            <path d="m16.24 7.76 2.83-2.83" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+
+          {address ? "Update current location" : "Use current location"}
+        </>
+      )}
+    </button>
+
+    {errors.address && (
+      <p className="mt-2 text-[9px] font-semibold text-red-500">
+        {errors.address}
+      </p>
+    )}
+  </div>
+</div>
 
 {/* STORE IMAGE */}
 

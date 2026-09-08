@@ -25,7 +25,8 @@ type Shop = {
   opening_time: string;
   closing_time: string;
   is_active: boolean;
-  created_at: string;
+is_manually_closed: boolean;
+created_at: string;
   activeDiscount: ShopDiscount | null;
 };
 
@@ -200,8 +201,9 @@ const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
               latitude,
               longitude,
               is_open,
-              is_active,
-              created_at
+is_active,
+is_manually_closed,
+created_at
             `
           )
           .eq("is_active", true)
@@ -655,11 +657,12 @@ const pageDescription = selectedCategory
           filteredShops.length > 0 && (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
              {filteredShops.map((shop) => {
-  const shopIsOpen = isShopOpen(
+ const shopIsOpen =
+  !shop.is_manually_closed &&
+  isShopOpen(
     shop.opening_time,
     shop.closing_time
   );
-
   let distance: string | null = null;
 
   if (

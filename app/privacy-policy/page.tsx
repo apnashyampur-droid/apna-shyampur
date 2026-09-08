@@ -247,7 +247,7 @@ export default function PrivacyPolicyScreen() {
                 "Vegetables",
                 "Meat",
                 "Medicine",
-                "Fast Food",
+                "Food",
                 "Bakery",
                 "Dairy",
                 "Electronics",
@@ -522,13 +522,48 @@ export default function PrivacyPolicyScreen() {
 
           </section>
 
-
-          {/* 16. CHANGES */}
+          {/* 16. FRAUD, MISUSE & ORDER SUPPORT */}
 
           <section className="border-b border-black/[0.06] px-5 py-7 sm:px-8 sm:py-9">
 
             <h2 className="text-[16px] font-black tracking-[-0.02em]">
-              16. Changes to This Privacy Policy
+              16. Fraud, Misuse & Order Support
+            </h2>
+
+            <p className="mt-3 text-[12px] leading-[1.75] text-black/55 sm:text-[13px]">
+              Apna Shyampur takes fraudulent activity and misuse of the
+              platform seriously. Any attempt to make a fraudulent payment,
+              submit false or manipulated payment proof, obtain products or
+              services through deception, or otherwise misuse the platform may
+              result in appropriate action.
+            </p>
+
+            <p className="mt-3 text-[12px] leading-[1.75] text-black/55 sm:text-[13px]">
+              Where fraudulent or unlawful activity is identified, Apna
+              Shyampur reserves the right to suspend or restrict the relevant
+              account, cancel affected orders, retain relevant records and
+              take further action as permitted under applicable law, including
+              reporting the matter to the appropriate authorities where
+              necessary.
+            </p>
+
+            <p className="mt-3 text-[12px] leading-[1.75] text-black/55 sm:text-[13px]">
+              If you experience a delivery issue, such as an order being
+              delayed, incomplete, damaged or not delivered, please contact
+              Apna Shyampur through our official support channel. We will
+              review the issue and work with the relevant shop or delivery
+              personnel to help resolve the matter as reasonably possible.
+            </p>
+
+          </section>
+
+
+          {/* 17. CHANGES */}
+
+          <section className="border-b border-black/[0.06] px-5 py-7 sm:px-8 sm:py-9">
+
+            <h2 className="text-[16px] font-black tracking-[-0.02em]">
+              17. Changes to This Privacy Policy
             </h2>
 
             <p className="mt-3 text-[12px] leading-[1.75] text-black/55 sm:text-[13px]">

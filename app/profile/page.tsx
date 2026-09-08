@@ -25,11 +25,11 @@ type LocationCandidate = {
 const supabase = createClient();
 
 const SERVICE_CENTER = {
-  lat: 30.08,
-  lng: 78.30,
+  lat: 30.0614,
+  lng: 78.2234,
 };
 
-const SERVICE_RADIUS_KM = 25;
+const SERVICE_RADIUS_KM = 2.5;
 
 function distanceInKm(
   lat1: number,
@@ -73,7 +73,6 @@ function isInsideServiceArea(lat: number, lng: number) {
   return distance <= SERVICE_RADIUS_KM;
 }
 
-
 export default function ProfileScreen() {
   const router = useRouter();
 
@@ -94,8 +93,9 @@ export default function ProfileScreen() {
   */
 
   const [locationModal, setLocationModal] = useState(false);
+
   const [locationMode, setLocationMode] =
-    useState<"manual" | "current" | null>(null);
+    useState<"current" | null>(null);
 
   const [locationCandidate, setLocationCandidate] =
     useState<LocationCandidate | null>(null);
@@ -111,9 +111,6 @@ export default function ProfileScreen() {
 
   const [deletingLocation, setDeletingLocation] =
     useState(false);
-
-  const [manualAddress, setManualAddress] =
-    useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -197,7 +194,7 @@ export default function ProfileScreen() {
     if (!profile || !field) return;
 
     if (field === "address") {
-      openLocationPicker("manual");
+      openLocationPicker();
       return;
     }
 
@@ -250,236 +247,186 @@ export default function ProfileScreen() {
     setSaving(false);
   };
 
-const openLocationPicker = (
-  mode: "manual" | "current"
-) => {
-  setLocationMode(mode);
-  setLocationModal(true);
-  setLocationError("");
-  setLocationCandidate(null);
-
-  if (mode === "manual") {
-    setManualAddress(profile?.address ?? "");
-  } else {
-    setManualAddress("");
+  const openLocationPicker = () => {
+    setLocationMode("current");
+    setLocationModal(true);
+    setLocationError("");
+    setLocationCandidate(null);
     getCurrentLocation();
-  }
-};
+  };
 
-const getCurrentLocation = () => {
-  if (!navigator.geolocation) {
-    setLocationLoading(false);
-    setLocationError(
-      "Your browser does not support location services."
-    );
-    return;
-  }
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationLoading(false);
+      setLocationError(
+        "Your browser does not support location services."
+      );
+      return;
+    }
 
-  setLocationLoading(true);
-  setLocationError("");
-  setLocationCandidate(null);
+    setLocationLoading(true);
+    setLocationError("");
+    setLocationCandidate(null);
 
-  navigator.geolocation.getCurrentPosition(
-    async (position) => {
-      const latitude = position.coords.latitude;
-      const longitude = position.coords.longitude;
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
 
-      if (!isInsideServiceArea(latitude, longitude)) {
-        setLocationLoading(false);
-        setLocationError(
-          "Sorry, Apna Shyampur is not available at your current location yet."
-        );
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          `/api/geocode?lat=${encodeURIComponent(
-            latitude
-          )}&lng=${encodeURIComponent(longitude)}`
-        );
-
-        const data = await response.json();
-
-        if (!response.ok || !data.address) {
-          console.error(
-            "Reverse geocoding failed:",
-            data
-          );
-
+        if (!isInsideServiceArea(latitude, longitude)) {
           setLocationLoading(false);
           setLocationError(
-            data?.error ||
-              "We found your location, but couldn't get its address. Please try again."
+            "Sorry, Apna Shyampur is not available at your current location yet."
           );
           return;
         }
 
-        setLocationCandidate({
-          address: data.address,
-          latitude,
-          longitude,
+        try {
+          const response = await fetch(
+            `/api/geocode?lat=${encodeURIComponent(
+              latitude
+            )}&lng=${encodeURIComponent(longitude)}`
+          );
+
+          const data = await response.json();
+
+          if (!response.ok || !data.address) {
+            console.error(
+              "Reverse geocoding failed:",
+              data
+            );
+
+            setLocationLoading(false);
+            setLocationError(
+              data?.error ||
+                "We found your location, but couldn't get its address. Please try again."
+            );
+            return;
+          }
+
+          setLocationCandidate({
+            address: data.address,
+            latitude,
+            longitude,
+          });
+
+          setLocationLoading(false);
+          setLocationError("");
+        } catch (error) {
+          console.error(
+            "Reverse geocoding request failed:",
+            error
+          );
+
+          setLocationLoading(false);
+          setLocationError(
+            "We found your location, but couldn't get its address. Please try again."
+          );
+        }
+      },
+
+      (error) => {
+        console.error("Geolocation error:", {
+          code: error.code,
+          message: error.message,
         });
 
         setLocationLoading(false);
-        setLocationError("");
-      } catch (error) {
-        console.error(
-          "Reverse geocoding request failed:",
-          error
-        );
 
-        setLocationLoading(false);
-        setLocationError(
-          "We found your location, but couldn't get its address. Please try again."
-        );
+        if (error.code === 1) {
+          setLocationError(
+            "Location access was denied. Please allow location access for this site and try again."
+          );
+        } else if (error.code === 2) {
+          setLocationError(
+            "Your device could not determine your location. Please make sure Location is turned on and try again."
+          );
+        } else if (error.code === 3) {
+          setLocationError(
+            "We couldn't determine your location in time. Please try again."
+          );
+        } else {
+          setLocationError(
+            "We couldn't access your current location. Please try again."
+          );
+        }
+      },
+
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
       }
-    },
+    );
+  };
 
-    (error) => {
-      console.error("Geolocation error:", {
-        code: error.code,
-        message: error.message,
-      });
+  const saveLocation = async () => {
+    if (
+      !user ||
+      !locationCandidate?.address.trim() ||
+      locationCandidate.latitude === null ||
+      locationCandidate.longitude === null
+    ) {
+      return;
+    }
+
+    if (
+      !isInsideServiceArea(
+        locationCandidate.latitude,
+        locationCandidate.longitude
+      )
+    ) {
+      setLocationError(
+        "Sorry, Apna Shyampur is not available at your current location yet."
+      );
+      return;
+    }
+
+    setLocationLoading(true);
+
+    const updatedAt = new Date().toISOString();
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        address: locationCandidate.address.trim(),
+        latitude: locationCandidate.latitude,
+        longitude: locationCandidate.longitude,
+        location_updated_at: updatedAt,
+      })
+      .eq("id", user.id);
+
+    if (error) {
+      console.error("Location save error:", error);
 
       setLocationLoading(false);
 
-      if (error.code === 1) {
-        setLocationError(
-          "Location access was denied. Please allow location access for this site and try again."
-        );
-      } else if (error.code === 2) {
-        setLocationError(
-          "Your device could not determine your location. Please make sure Location is turned on and try again."
-        );
-      } else if (error.code === 3) {
-        setLocationError(
-          "We couldn't determine your location in time. Please try again."
-        );
-      } else {
-        setLocationError(
-          "We couldn't access your current location. Please try again."
-        );
-      }
-    },
+      setLocationError(
+        "We couldn't save your location. Please try again."
+      );
 
-    {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0,
+      return;
     }
-  );
-};
 
-const saveManualAddress = async () => {
-  if (!user) return;
-
-  const address = manualAddress.trim();
-
-  if (!address) {
-    setLocationError(
-      "Please enter your delivery address."
-    );
-    return;
-  }
-
-  setLocationLoading(true);
-  setLocationError("");
-
-  const updatedAt = new Date().toISOString();
-
-  const { error } = await supabase
-    .from("profiles")
-    .update({
-      address,
-      latitude: null,
-      longitude: null,
-      location_updated_at: updatedAt,
-    })
-    .eq("id", user.id);
-
-  if (error) {
-    console.error(
-      "Manual address save error:",
-      error
+    setProfile((current) =>
+      current
+        ? {
+            ...current,
+            address: locationCandidate.address.trim(),
+            latitude: locationCandidate.latitude,
+            longitude: locationCandidate.longitude,
+            location_updated_at: updatedAt,
+          }
+        : current
     );
 
     setLocationLoading(false);
-    setLocationError(
-      "We couldn't save your address. Please try again."
-    );
-    return;
-  }
+    setLocationModal(false);
+    setLocationCandidate(null);
+    setLocationMode(null);
+    setLocationError("");
+  };
 
-  setProfile((current) =>
-    current
-      ? {
-          ...current,
-          address,
-          latitude: null,
-          longitude: null,
-          location_updated_at: updatedAt,
-        }
-      : current
-  );
-
-  setLocationLoading(false);
-  setLocationModal(false);
-  setLocationMode(null);
-  setLocationCandidate(null);
-  setManualAddress("");
-  setLocationError("");
-};
-
-const saveLocation = async () => {
-  if (!user || !locationCandidate?.address.trim()) return;
-
-  setLocationLoading(true);
-
-  const updatedAt = new Date().toISOString();
-
-  const { error } = await supabase
-    .from("profiles")
-    .update({
-      address: locationCandidate.address.trim(),
-      latitude: locationCandidate.latitude,
-      longitude: locationCandidate.longitude,
-      location_updated_at: updatedAt,
-    })
-    .eq("id", user.id);
-
-  if (error) {
-    console.error("Location save error:", error);
-
-    setLocationLoading(false);
-
-    setLocationError(
-      "We couldn't save your location. Please try again."
-    );
-
-    return;
-  }
-
-  setProfile((current) =>
-    current
-      ? {
-          ...current,
-          address: locationCandidate.address.trim(),
-          latitude: locationCandidate.latitude,
-          longitude: locationCandidate.longitude,
-          location_updated_at: updatedAt,
-        }
-      : current
-  );
-
-  setLocationLoading(false);
-  setLocationModal(false);
-  setLocationCandidate(null);
-  setLocationMode(null);
-  setManualAddress("");
-  setLocationError("");
-};
- 
   const deleteLocation = async () => {
     if (!user || !profile?.address) return;
 
@@ -616,13 +563,13 @@ const saveLocation = async () => {
 
           </div>
 
-         <button
-  type="button"
-  onClick={() => router.back()}
-  className="rounded-full border border-black/10 bg-white px-4 py-2 text-[10px] font-bold text-black/65 transition hover:border-black/20 hover:text-black sm:text-[11px]"
->
-  Back
-</button>
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="rounded-full border border-black/10 bg-white px-4 py-2 text-[10px] font-bold text-black/65 transition hover:border-black/20 hover:text-black sm:text-[11px]"
+          >
+            Back
+          </button>
 
         </div>
       </header>
@@ -1047,11 +994,7 @@ const saveLocation = async () => {
 
                       <button
                         type="button"
-                        onClick={() =>
-                          openLocationPicker(
-                            "manual"
-                          )
-                        }
+                        onClick={openLocationPicker}
                         aria-label="Edit delivery address"
                         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.05] hover:text-black"
                       >
@@ -1168,48 +1111,14 @@ const saveLocation = async () => {
                     </div>
 
                     <div className="mt-1 text-[10px] leading-4 text-black/35">
-                      Choose your current location or search for your delivery address.
+                      Your location is required for delivery. We'll use your current
+                      device location.
                     </div>
 
-                    <div className="mt-3 flex flex-wrap gap-2">
-
-                      {/* MANUAL */}
-
+                    <div className="mt-3">
                       <button
                         type="button"
-                        onClick={() =>
-                          openLocationPicker(
-                            "manual"
-                          )
-                        }
-                        className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2.5 text-[10px] font-bold text-black/65 transition hover:border-black/20 hover:bg-black/[0.02] hover:text-black"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M12 20h9" />
-                          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
-                        </svg>
-
-                        Add location
-                      </button>
-
-                      {/* CURRENT */}
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          openLocationPicker(
-                            "current"
-                          )
-                        }
+                        onClick={openLocationPicker}
                         className="inline-flex items-center gap-2 rounded-full bg-[#159447] px-4 py-2.5 text-[10px] font-bold text-white transition hover:bg-[#0f7d3b]"
                       >
                         <svg
@@ -1240,7 +1149,6 @@ const saveLocation = async () => {
 
                         Use current location
                       </button>
-
                     </div>
 
                   </div>
@@ -1335,17 +1243,13 @@ const saveLocation = async () => {
 
               <div>
 
-              <div className="text-[15px] font-black tracking-[-0.03em]">
-  {locationMode === "current"
-    ? "Use current location"
-    : "Add delivery address"}
-</div>
+                <div className="text-[15px] font-black tracking-[-0.03em]">
+                  Use current location
+                </div>
 
-<div className="mt-1 text-[10px] text-black/40">
-  {locationMode === "current"
-    ? "We'll use your device location."
-    : "Enter your delivery address manually."}
-</div>
+                <div className="mt-1 text-[10px] text-black/40">
+                  We'll use your device location to verify your delivery area.
+                </div>
 
               </div>
 
@@ -1380,77 +1284,6 @@ const saveLocation = async () => {
             {/* MODAL BODY */}
 
             <div className="px-5 py-5 sm:px-6">
-
-              {locationMode === "manual" && (
-                <div>
-
-                <div className="relative">
-
-  <svg
-    width="17"
-    height="17"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-black/30"
-  >
-    <circle
-      cx="11"
-      cy="11"
-      r="7"
-    />
-    <path d="m20 20-4-4" />
-  </svg>
-
-  <input
-    autoFocus
-    type="text"
-    value={manualAddress}
-    maxLength={180}
-    onChange={(e) => {
-      setManualAddress(
-        e.target.value.slice(0, 180)
-      );
-      setLocationError("");
-    }}
-    placeholder="Enter your complete delivery address"
-    className="h-12 w-full rounded-[14px] border border-black/10 bg-[#fafafa] pl-11 pr-4 text-[12px] font-semibold outline-none transition focus:border-[#159447]/40 focus:bg-white"
-  />
-
-</div>
-
-<div className="mt-1.5 flex items-center justify-between px-1">
-  <div className="text-[9px] leading-4 text-black/30">
-    Enter house/shop, village, area and nearby landmark.
-  </div>
-
-  <div className="shrink-0 text-[8px] font-medium text-black/25">
-    {manualAddress.length}/180
-  </div>
-</div>
-
-<button
-  type="button"
-  onClick={saveManualAddress}
-  disabled={
-    locationLoading ||
-    !manualAddress.trim()
-  }
-  className="mt-3 w-full rounded-[13px] bg-[#159447] px-4 py-3 text-[10px] font-bold text-white transition hover:bg-[#0f7d3b] disabled:cursor-not-allowed disabled:opacity-50"
->
-  {locationLoading
-    ? "Saving..."
-    : "Save location"}
-</button>
-
-<div className="mt-2 text-[9px] leading-4 text-black/30">
-  Please enter an address within the Apna Shyampur delivery area.
-</div>
-                </div>
-              )}
 
               {locationMode === "current" && (
                 <div className="rounded-[18px] border border-[#159447]/10 bg-[#159447]/[0.045] px-4 py-4">
@@ -1495,6 +1328,7 @@ const saveLocation = async () => {
 
                       <div className="mt-1 text-[10px] leading-4 text-black/40">
                         Please allow location access when your browser asks.
+                        Your location must be within 2.5 km of Apna Shyampur.
                       </div>
 
                     </div>

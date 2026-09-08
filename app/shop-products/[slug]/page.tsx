@@ -30,6 +30,7 @@ type Shop = {
   address: string | null;
   opening_time: string | null;
   closing_time: string | null;
+  is_manually_closed: boolean;
   activeDiscount: ShopDiscount | null;
 };
 
@@ -201,7 +202,7 @@ const cartTotal = useMemo(() => {
           .from("shops")
           .select(
             `
-              id,
+                          id,
               name,
               slug,
               description,
@@ -209,7 +210,8 @@ const cartTotal = useMemo(() => {
               image_url,
               address,
               opening_time,
-              closing_time
+              closing_time,
+              is_manually_closed
             `
           )
           .eq("slug", slug)
@@ -606,15 +608,19 @@ const filteredCombos = useMemo(() => {
   /* ------------------------------------------------------------------------ */
 
   const shopOpen = useMemo(() => {
-    if (!shop?.opening_time || !shop?.closing_time) {
-      return null;
-    }
+  if (shop?.is_manually_closed) {
+    return false;
+  }
 
-    return isShopOpen(
-      shop.opening_time,
-      shop.closing_time
-    );
-  }, [shop]);
+  if (!shop?.opening_time || !shop?.closing_time) {
+    return null;
+  }
+
+  return isShopOpen(
+    shop.opening_time,
+    shop.closing_time
+  );
+}, [shop]);
 
   /* ------------------------------------------------------------------------ */
   /* LOADING                                                                  */

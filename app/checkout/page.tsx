@@ -23,6 +23,8 @@ type SavedCart = {
   shopName: string;
   shopSlug?: string;
   shopCategory?: string;
+  shopLatitude?: number | null;
+  shopLongitude?: number | null;
   items: CartItem[];
 };
 
@@ -165,10 +167,10 @@ const {
   data: shopData,
   error: shopError,
 } = await supabase
-  .from("shops")
-  .select("name")
-  .eq("id", parsedCart.shopId)
-  .maybeSingle();
+.from("shops")
+.select("name, category, latitude, longitude")
+.eq("id", parsedCart.shopId)
+.maybeSingle();
 
 if (shopError) {
   throw shopError;
@@ -183,6 +185,14 @@ if (!shopData?.name) {
 const cartWithShop: SavedCart = {
   ...parsedCart,
   shopName: shopData.name,
+  shopCategory:
+    shopData.category ??
+    parsedCart.shopCategory ??
+    "",
+  shopLatitude:
+    shopData.latitude ?? null,
+  shopLongitude:
+    shopData.longitude ?? null,
 };
 
 setCart(cartWithShop);
@@ -274,10 +284,133 @@ setCart(cartWithShop);
     );
   }, [cart]);
 
-  const deliveryCharge = 0;
+const distanceInKm = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) => {
+  const earthRadius = 6371;
 
-  const total =
-    subtotal + deliveryCharge;
+  const dLat =
+    ((lat2 - lat1) * Math.PI) / 180;
+
+  const dLon =
+    ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(dLat / 2) *
+      Math.sin(dLat / 2) +
+    Math.cos(
+      (lat1 * Math.PI) / 180
+    ) *
+      Math.cos(
+        (lat2 * Math.PI) / 180
+      ) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c =
+    2 *
+    Math.atan2(
+      Math.sqrt(a),
+      Math.sqrt(1 - a)
+    );
+
+  return earthRadius * c;
+};
+
+/* CATEGORY EXTRA */
+
+const categoryCharge = useMemo(() => {
+  if (!cart?.shopCategory) return 0;
+
+  const category =
+    cart.shopCategory
+      .trim()
+      .toLowerCase();
+
+  const charges: Record<
+    string,
+    number
+  > = {
+    vegetables: 10,
+    grocery: 15,
+    dairy: 10,
+    bakery: 15,
+    food: 10,
+    meat: 10,
+    medical: 15,
+    electronics: 20,
+  };
+
+  return charges[category] ?? 0;
+}, [cart]);
+
+/* DISTANCE DELIVERY CHARGE */
+
+const deliveryDistanceKm = useMemo(() => {
+  if (
+    !cart ||
+    cart.shopLatitude === null ||
+    cart.shopLatitude === undefined ||
+    cart.shopLongitude === null ||
+    cart.shopLongitude === undefined ||
+    profile?.latitude === null ||
+    profile?.latitude === undefined ||
+    profile?.longitude === null ||
+    profile?.longitude === undefined
+  ) {
+    return null;
+  }
+
+  return distanceInKm(
+    profile.latitude,
+    profile.longitude,
+    cart.shopLatitude,
+    cart.shopLongitude
+  );
+}, [cart, profile]);
+
+const distanceDeliveryCharge = useMemo(() => {
+  if (deliveryDistanceKm === null) {
+    return 0;
+  }
+
+  const distanceInMeters =
+    deliveryDistanceKm * 1000;
+
+  if (distanceInMeters <= 100) {
+    return 3;
+  }
+
+  if (distanceInMeters <= 500) {
+    return 6;
+  }
+
+  if (distanceInMeters <= 1000) {
+    return 10;
+  }
+
+  if (distanceInMeters <= 1500) {
+    return 14;
+  }
+
+  if (distanceInMeters <= 2500) {
+    return 20;
+  }
+
+  return 20;
+}, [deliveryDistanceKm]);
+
+/* TOTAL DELIVERY CHARGE */
+
+const deliveryCharge =
+  categoryCharge +
+  distanceDeliveryCharge;
+
+const total =
+  subtotal + deliveryCharge;
 
   /* PROFILE CHECK */
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-const NOMINATIM_URL =
-  "https://nominatim.openstreetmap.org";
+const GOOGLE_GEOCODING_URL =
+  "https://maps.googleapis.com/maps/api/geocode/json";
 
 export async function GET(request: Request) {
   try {
@@ -11,27 +11,41 @@ export async function GET(request: Request) {
     const lng = searchParams.get("lng");
     const address = searchParams.get("address");
 
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+
+    if (!apiKey) {
+      console.error(
+        "GOOGLE_MAPS_API_KEY is missing."
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Location service is not configured.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* REVERSE GEOCODING: latitude + longitude → address                     */
+    /* ---------------------------------------------------------------------- */
+
     if (lat && lng) {
       const response = await fetch(
-        `${NOMINATIM_URL}/reverse?format=jsonv2&lat=${encodeURIComponent(
-          lat
-        )}&lon=${encodeURIComponent(
-          lng
-        )}&zoom=18&addressdetails=1`,
+        `${GOOGLE_GEOCODING_URL}?latlng=${encodeURIComponent(
+          `${lat},${lng}`
+        )}&key=${encodeURIComponent(apiKey)}`,
         {
-          headers: {
-            "User-Agent":
-              "ApnaShyampur/1.0 (local delivery website)",
-            Accept:
-              "application/json",
-          },
           cache: "no-store",
         }
       );
 
       if (!response.ok) {
         console.error(
-          "Nominatim reverse geocoding failed:",
+          "Google reverse geocoding request failed:",
           response.status,
           response.statusText
         );
@@ -49,7 +63,28 @@ export async function GET(request: Request) {
 
       const data = await response.json();
 
-      if (!data?.display_name) {
+      if (data.status !== "OK") {
+        console.error(
+          "Google reverse geocoding failed:",
+          data.status,
+          data.error_message || ""
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "We found your location, but couldn't get its address.",
+          },
+          {
+            status: 502,
+          }
+        );
+      }
+
+      const result =
+        data.results?.[0];
+
+      if (!result?.formatted_address) {
         return NextResponse.json(
           {
             error:
@@ -62,29 +97,28 @@ export async function GET(request: Request) {
       }
 
       return NextResponse.json({
-        address: data.display_name,
+        address:
+          result.formatted_address,
       });
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* FORWARD GEOCODING: address → latitude + longitude                     */
+    /* ---------------------------------------------------------------------- */
+
     if (address?.trim()) {
       const response = await fetch(
-        `${NOMINATIM_URL}/search?format=jsonv2&q=${encodeURIComponent(
+        `${GOOGLE_GEOCODING_URL}?address=${encodeURIComponent(
           address.trim()
-        )}&limit=1&addressdetails=1`,
+        )}&key=${encodeURIComponent(apiKey)}`,
         {
-          headers: {
-            "User-Agent":
-              "ApnaShyampur/1.0 (local delivery website)",
-            Accept:
-              "application/json",
-          },
           cache: "no-store",
         }
       );
 
       if (!response.ok) {
         console.error(
-          "Nominatim address search failed:",
+          "Google address search request failed:",
           response.status,
           response.statusText
         );
@@ -102,7 +136,13 @@ export async function GET(request: Request) {
 
       const data = await response.json();
 
-      if (!Array.isArray(data) || !data.length) {
+      if (data.status !== "OK") {
+        console.error(
+          "Google address search failed:",
+          data.status,
+          data.error_message || ""
+        );
+
         return NextResponse.json(
           {
             error:
@@ -114,10 +154,14 @@ export async function GET(request: Request) {
         );
       }
 
-      const result = data[0];
+      const result =
+        data.results?.[0];
 
-      const latitude = Number(result.lat);
-      const longitude = Number(result.lon);
+      const latitude =
+        result?.geometry?.location?.lat;
+
+      const longitude =
+        result?.geometry?.location?.lng;
 
       if (
         !Number.isFinite(latitude) ||
@@ -136,12 +180,14 @@ export async function GET(request: Request) {
 
       return NextResponse.json({
         address:
-          result.display_name ||
+          result.formatted_address ||
           address.trim(),
         latitude,
         longitude,
       });
     }
+
+    /* ---------------------------------------------------------------------- */
 
     return NextResponse.json(
       {

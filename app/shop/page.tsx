@@ -17,8 +17,9 @@ type ShopData = {
   name: string; 
   description: string; 
   store_image_url: string | null; 
-  status: "pending" | "rejected" | "approved"; 
-}; 
+  status: "pending" | "rejected" | "approved";
+  is_manually_closed: boolean;
+};
 
 type ShopDiscount = {
   id: string;
@@ -132,9 +133,16 @@ export default function ShopDashboard() {
   const [shopStatus, setShopStatus] = useState<ShopStatus>("loading"); 
   const [shop, setShop] = useState<ShopData | null>(null); 
   const [stats, setStats] = useState<DashboardStats>(emptyStats); 
-  const [errorMessage, setErrorMessage] = useState("");
+ const [errorMessage, setErrorMessage] = useState("");
+
 const [activeDiscount, setActiveDiscount] =
   useState<ShopDiscount | null>(null);
+
+const [showShopStatusConfirm, setShowShopStatusConfirm] =
+  useState(false);
+
+const [shopStatusSaving, setShopStatusSaving] =
+  useState(false);
  
   const [imageUploading, setImageUploading] = useState(false); 
   const [imageMessage, setImageMessage] = useState(""); 
@@ -243,10 +251,10 @@ const [cropSaving, setCropSaving] = useState(false);
  
         if (status === "approved") {
   const { data: actualShop, error: actualShopError } = await supabase
-    .from("shops")
-    .select("id")
-    .eq("application_id", application.id)
-    .maybeSingle();
+  .from("shops")
+  .select("id, is_manually_closed")
+  .eq("application_id", application.id)
+  .maybeSingle();
 
   if (!mounted) return;
 
@@ -290,14 +298,15 @@ const [cropSaving, setCropSaving] = useState(false);
   }
 
   setShop({
-    id: shopId,
-    name: application.store_name || "Your Shop",
-    description:
-      application.description ||
-      "Add a description to tell customers about your shop.",
-    store_image_url: application.store_image_url || null,
-    status: "approved",
-  });
+  id: shopId,
+  name: application.store_name || "Your Shop",
+  description:
+    application.description ||
+    "Add a description to tell customers about your shop.",
+  store_image_url: application.store_image_url || null,
+  status: "approved",
+  is_manually_closed: actualShop?.is_manually_closed ?? false,
+});
 
   const now = new Date();
 
@@ -338,10 +347,53 @@ if (discountError) {
   );
 }
 
+  let newOrdersCount = 0;
+  let activeOrdersCount = 0;
+  let completedOrdersCount = 0;
+
+  if (actualShop?.id) {
+    const { data: orderData, error: ordersError } = await supabase
+      .from("orders")
+      .select("id, status")
+      .eq("shop_id", actualShop.id);
+
+    if (ordersError) {
+      console.error("Orders stats error:", {
+        message: ordersError.message,
+        details: ordersError.details,
+        hint: ordersError.hint,
+        code: ordersError.code,
+      });
+    } else {
+      newOrdersCount =
+        orderData?.filter(
+          (order) => String(order.status).toLowerCase() === "pending"
+        ).length ?? 0;
+
+      activeOrdersCount =
+        orderData?.filter((order) =>
+          [
+            "accepted",
+            "preparing",
+            "ready",
+            "out_for_delivery",
+          ].includes(String(order.status).toLowerCase())
+        ).length ?? 0;
+
+      completedOrdersCount =
+  orderData?.filter(
+    (order) =>
+      ["delivered", "completed"].includes(
+        String(order.status).toLowerCase()
+      )
+  ).length ?? 0;
+    }
+  }
+
   setStats({
-    newOrders: 0,
-    activeOrders: 0,
-    completedOrders: 0,
+    newOrders: newOrdersCount,
+    activeOrders: activeOrdersCount,
+    completedOrders: completedOrdersCount,
     products: productsCount,
     availableProducts: availableProductsCount,
     unavailableProducts: unavailableProductsCount,
@@ -552,9 +604,52 @@ if (discountError) {
     setCroppedAreaPixels(null); 
   }; 
  
-  const handleRetry = () => { 
-    window.location.reload(); 
-  }; 
+ const handleRetry = () => {
+  window.location.reload();
+};
+
+const handleShopStatusToggle = () => {
+  if (!shop || shopStatusSaving) return;
+
+  setShowShopStatusConfirm(true);
+};
+
+const confirmShopStatusChange = async () => {
+  if (!shop || shopStatusSaving) return;
+
+  const nextClosedState = !shop.is_manually_closed;
+
+  try {
+    setShopStatusSaving(true);
+
+    const { error } = await supabase
+      .from("shops")
+      .update({
+        is_manually_closed: nextClosedState,
+      })
+      .eq("id", shop.id);
+
+    if (error) {
+      console.error("Shop status update error:", error);
+      return;
+    }
+
+    setShop((current) =>
+      current
+        ? {
+            ...current,
+            is_manually_closed: nextClosedState,
+          }
+        : current
+    );
+
+    setShowShopStatusConfirm(false);
+  } catch (error) {
+    console.error("Shop status toggle error:", error);
+  } finally {
+    setShopStatusSaving(false);
+  }
+};
  
   if (shopStatus === "loading") { 
     return ( 
@@ -807,12 +902,25 @@ if (shopStatus === "pending") {
  
             {/* ACTIVE BADGE */} 
  
-            <div className="absolute right-4 top-4"> 
-              <div className="flex items-center gap-1.5 rounded-full border border-white/40 bg-white/90 px-3 py-1.5 text-[9px] font-black text-[#159447] shadow-sm backdrop-blur-md"> 
-                <span className="h-1.5 w-1.5 rounded-full bg-[#159447]" /> 
-                Active 
-              </div> 
-            </div> 
+          <div className="absolute right-4 top-4">
+  <div
+    className={`flex items-center gap-1.5 rounded-full border border-white/40 bg-white/90 px-3 py-1.5 text-[9px] font-black shadow-sm backdrop-blur-md ${
+      shop?.is_manually_closed
+        ? "text-[#d14343]"
+        : "text-[#159447]"
+    }`}
+  >
+    <span
+      className={`h-1.5 w-1.5 rounded-full ${
+        shop?.is_manually_closed
+          ? "bg-[#d14343]"
+          : "bg-[#159447]"
+      }`}
+    />
+
+    {shop?.is_manually_closed ? "Closed" : "Active"}
+  </div>
+</div>
  
            <input 
   ref={imageInputRef} 
@@ -839,42 +947,61 @@ if (shopStatus === "pending") {
  
           {/* SHOP INFO */} 
  
-          <div className="relative px-5 py-6 sm:px-7 sm:py-7"> 
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"> 
-              <div className="min-w-0"> 
-                <h2 className="truncate text-[21px] font-black tracking-[-0.04em] sm:text-[24px]"> 
-                  {shop?.name || "Your Shop"} 
-                </h2> 
- 
-                <p className="mt-2 line-clamp-2 max-w-[700px] text-[10px] leading-4 text-black/40 sm:text-[11px]"> 
-                  {shop?.description || 
-                    "Add a description to tell customers about your shop."} 
-                </p> 
-              </div> 
- 
-              <button 
-                type="button" 
-                onClick={() => router.push("/shop/edit")}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-[13px] border border-black/[0.08] bg-white px-5 py-3 text-[10px] font-black transition hover:border-black/[0.15] hover:bg-black/[0.015] sm:w-auto" 
-              > 
-                <EditIcon /> 
-                Edit Shop Details 
-              </button> 
-            </div> 
-          </div> 
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+  <div className="min-w-0">
+    <h2 className="truncate text-[21px] font-black tracking-[-0.04em] sm:text-[24px]">
+      {shop?.name || "Your Shop"}
+    </h2>
+
+    <p className="mt-2 line-clamp-2 max-w-[700px] text-[10px] leading-4 text-black/40 sm:text-[11px]">
+      {shop?.description ||
+        "Add a description to tell customers about your shop."}
+    </p>
+  </div>
+
+  <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:items-center">
+    <button
+      type="button"
+      onClick={handleShopStatusToggle}
+      className={`inline-flex w-full items-center justify-center gap-2 rounded-[13px] px-5 py-3 text-[10px] font-black transition sm:w-auto ${
+        shop?.is_manually_closed
+          ? "border border-red-500/15 bg-[#fff4f4] text-[#c43d3d] hover:bg-[#ffeded]"
+          : "border border-[#159447]/15 bg-[#f2faf4] text-[#159447] hover:bg-[#eaf7ed]"
+      }`}
+    >
+      <span
+        className={`h-2 w-2 rounded-full ${
+          shop?.is_manually_closed
+            ? "bg-[#d14343]"
+            : "bg-[#159447]"
+        }`}
+      />
+
+      {shop?.is_manually_closed
+        ? "Shop Closed"
+        : "Shop Open"}
+    </button>
+
+    <button
+      type="button"
+      onClick={() => router.push("/shop/edit")}
+      className="inline-flex w-full items-center justify-center gap-2 rounded-[13px] border border-black/[0.08] bg-white px-5 py-3 text-[10px] font-black transition hover:border-black/[0.15] hover:bg-black/[0.015] sm:w-auto"
+    >
+      <EditIcon />
+      Edit Shop Details
+    </button>
+  </div>
+</div>
         </section> 
  
         {/* STATS */} 
- 
-      {/* STATS */}
-
-<section className="mt-5 grid gap-3 sm:grid-cols-3">
+ <section className="mt-5 grid gap-3 sm:grid-cols-3">
   <StatCard
     label="New Orders"
     value={stats.newOrders}
     icon={<OrderIcon />}
     accent="green"
-    onClick={() => router.push("/shop/orders?status=new")}
+    onClick={() => router.push("/shop/shop_orders?status=new")}
   />
 
   <StatCard
@@ -890,7 +1017,7 @@ if (shopStatus === "pending") {
     value={stats.completedOrders}
     icon={<CheckIcon />}
     accent="blue"
-    onClick={() => router.push("/shop/orders?status=completed")}
+    onClick={() => router.push("/shop/shop_orders?status=completed")}
   />
 </section>
  
@@ -921,7 +1048,7 @@ if (shopStatus === "pending") {
     icon={<OrderIcon />}
     title="Manage Orders"
     description="View and manage customer orders."
-    onClick={() => router.push("/shop/orders")}
+    onClick={() => router.push("/shop/shop_orders")}
   />
 
     <ActionCard
@@ -939,17 +1066,18 @@ if (shopStatus === "pending") {
           {/* ORDERS */} 
  
           <DashboardPanel 
-            title="Orders" 
-            subtitle="Manage incoming and previous orders." 
-            action="View all" 
-            onAction={() => router.push("/shop/orders")} 
-          > 
+  title="Orders" 
+  subtitle="Manage incoming and previous orders." 
+  action="View all" 
+  onAction={() => router.push("/shop/shop_orders")} 
+>
+
             <div className="grid gap-2.5 sm:grid-cols-2"> 
               <PanelLink 
                 icon={<OrderIcon />} 
                 title="New Orders" 
                 value={`${stats.newOrders} waiting`} 
-                onClick={() => router.push("/shop/orders?status=new")} 
+                onClick={() => router.push("/shop/shop_orders?status=new")}
                 highlight 
               /> 
  
@@ -957,7 +1085,7 @@ if (shopStatus === "pending") {
                 icon={<ClockIcon />} 
                 title="Active Orders" 
                 value={`${stats.activeOrders} in progress`} 
-                onClick={() => router.push("/shop/orders?status=active")} 
+                onClick={() => router.push("/shop/shop_orders?status=active")}
               /> 
  
               <PanelLink 
@@ -965,18 +1093,20 @@ if (shopStatus === "pending") {
                 title="Completed" 
                 value={`${stats.completedOrders} completed`} 
                 onClick={() => 
-                  router.push("/shop/orders?status=completed") 
-                } 
-              /> 
+  router.push("/shop/shop_orders?status=completed") 
+}
+/>
  
               <PanelLink 
                 icon={<HistoryIcon />} 
                 title="Order History" 
                 value="View all previous orders" 
-                onClick={() => 
-                  router.push("/shop/orders?status=history") 
-                } 
-              /> 
+                onClick={() =>
+  router.push("/shop/shop_orders?status=history")
+}
+>
+
+</PanelLink>
             </div> 
           </DashboardPanel> 
  
@@ -1172,6 +1302,74 @@ if (shopStatus === "pending") {
     </div> 
   </div> 
 )} 
+
+{showShopStatusConfirm && shop && (
+  <div
+    className="fixed inset-0 z-[110] flex items-center justify-center bg-black/45 px-5 backdrop-blur-[3px]"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="shop-status-confirm-title"
+  >
+    <div className="w-full max-w-[380px] rounded-[24px] border border-black/[0.07] bg-white p-6 shadow-[0_25px_80px_rgba(0,0,0,.18)]">
+
+      <div
+        className={`mx-auto flex h-12 w-12 items-center justify-center rounded-[16px] ${
+          shop.is_manually_closed
+            ? "bg-[#eef5ef] text-[#159447]"
+            : "bg-[#fff0f0] text-[#d14343]"
+        }`}
+      >
+        <StoreIcon size={24} />
+      </div>
+
+      <h2
+        id="shop-status-confirm-title"
+        className="mt-5 text-center text-[18px] font-black tracking-[-0.04em]"
+      >
+        {shop.is_manually_closed
+          ? "Reopen your shop?"
+          : "Close your shop?"}
+      </h2>
+
+      <p className="mt-2 text-center text-[11px] leading-5 text-black/45">
+        {shop.is_manually_closed
+          ? "Your shop will be available to customers again."
+          : "Your shop will be marked as closed and customers won't be able to place orders."}
+      </p>
+
+      <div className="mt-5 flex gap-2.5">
+        <button
+          type="button"
+          onClick={() => setShowShopStatusConfirm(false)}
+          disabled={shopStatusSaving}
+          className="flex h-11 flex-1 items-center justify-center rounded-full border border-black/[0.08] bg-white text-[10px] font-black text-black/60 transition hover:border-black/[0.14] hover:text-black disabled:opacity-50"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={confirmShopStatusChange}
+          disabled={shopStatusSaving}
+          className={`flex h-11 flex-1 items-center justify-center rounded-full text-[10px] font-black text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
+            shop.is_manually_closed
+              ? "bg-[#159447] hover:bg-[#117d3c]"
+              : "bg-[#d14343] hover:bg-[#b93636]"
+          }`}
+        >
+          {shopStatusSaving ? (
+            <MiniSpinner />
+          ) : shop.is_manually_closed ? (
+            "Reopen Shop"
+          ) : (
+            "Close Shop"
+          )}
+        </button>
+      </div>
+
+    </div>
+  </div>
+)}
  
     </main> 
   ); 

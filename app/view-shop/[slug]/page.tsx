@@ -20,6 +20,7 @@ type Shop = {
   longitude: number | null;
   rating: number | null;
   is_active: boolean;
+is_manually_closed: boolean;
 };
 
 type Review = {
@@ -232,6 +233,20 @@ export default function ViewShopPage() {
   const [shop, setShop] = useState<Shop | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+const [showClosedShopModal, setShowClosedShopModal] =
+  useState(false);
+
+  const [, setShopTimeTick] = useState(0);
+
+useEffect(() => {
+  const interval = window.setInterval(() => {
+    setShopTimeTick((value) => value + 1);
+  }, 30000);
+
+  return () => {
+    window.clearInterval(interval);
+  };
+}, []);
 
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
@@ -242,6 +257,11 @@ export default function ViewShopPage() {
 
   const [userId, setUserId] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+
+  /* FAVOURITE SHOP */
+
+  const [isFavourite, setIsFavourite] = useState(false);
+  const [favouriteLoading, setFavouriteLoading] = useState(false);
 
   const [currentUserProfile, setCurrentUserProfile] = useState<{
   full_name: string | null;
@@ -353,6 +373,91 @@ export default function ViewShopPage() {
     };
   }, []);
 
+    /* FAVOURITE SHOP STATE */
+
+  useEffect(() => {
+    if (!shop?.id || !userId) {
+      setIsFavourite(false);
+      return;
+    }
+
+    const fetchFavourite = async () => {
+      const supabase = createClient();
+
+      const { data, error } = await supabase
+        .from("user_favourite_shops")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("shop_id", shop.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error("FETCH FAVOURITE ERROR:", error);
+        return;
+      }
+
+      setIsFavourite(!!data);
+    };
+
+    fetchFavourite();
+  }, [shop?.id, userId]);
+
+  /* TOGGLE FAVOURITE */
+
+  const handleToggleFavourite = async () => {
+    if (!shop) return;
+
+    if (!userId) {
+      router.push(
+        `/sign-in?redirect=/view-shop/${encodeURIComponent(shop.slug)}`
+      );
+      return;
+    }
+
+    if (favouriteLoading) return;
+
+    setFavouriteLoading(true);
+
+    try {
+      const supabase = createClient();
+
+      if (isFavourite) {
+        const { error } = await supabase
+          .from("user_favourite_shops")
+          .delete()
+          .eq("user_id", userId)
+          .eq("shop_id", shop.id);
+
+        if (error) {
+          console.error("REMOVE FAVOURITE ERROR:", error);
+          return;
+        }
+
+        setIsFavourite(false);
+      } else {
+        const { error } = await supabase
+          .from("user_favourite_shops")
+          .insert({
+            user_id: userId,
+            shop_id: shop.id,
+          });
+
+        if (error) {
+          if (error.code === "23505") {
+            setIsFavourite(true);
+          } else {
+            console.error("ADD FAVOURITE ERROR:", error);
+            return;
+          }
+        } else {
+          setIsFavourite(true);
+        }
+      }
+    } finally {
+      setFavouriteLoading(false);
+    }
+  };
+
   /* FETCH SHOP */
 
   useEffect(() => {
@@ -389,7 +494,8 @@ export default function ViewShopPage() {
               latitude,
               longitude,
               rating,
-              is_active
+is_active,
+is_manually_closed
             `
           )
           .eq("slug", slug)
@@ -557,6 +663,16 @@ useEffect(() => {
   fetchReviews();
 }, [shop?.id]);
 
+useEffect(() => {
+  const interval = window.setInterval(() => {
+    setShowClosedShopModal(false);
+  }, 30000);
+
+  return () => {
+    window.clearInterval(interval);
+  };
+}, []);
+
   /* FETCH SHOP OFFERS */
 
   useEffect(() => {
@@ -651,12 +767,13 @@ const myReview = userId
 const canPostReview =
   !!userId && !myReview;
 
-  const shopIsOpen = shop
-    ? isShopOpen(
-        shop.opening_time,
-        shop.closing_time
-      )
-    : false;
+ const shopIsOpen = shop
+  ? !shop.is_manually_closed &&
+    isShopOpen(
+      shop.opening_time,
+      shop.closing_time
+    )
+  : false;
 
   const distance =
     shop &&
@@ -1131,21 +1248,67 @@ const handleSubmitReview = async () => {
 
               <div className="absolute inset-x-0 bottom-0 z-[1] h-[72%] bg-gradient-to-t from-black/85 via-black/45 to-transparent" />
 
-          <div className="absolute left-5 top-5 z-20 flex items-center gap-2 rounded-full border border-white/20 bg-white/90 px-3.5 py-2 text-[9px] font-black tracking-[0.03em] shadow-[0_4px_18px_rgba(0,0,0,.15)] backdrop-blur-md sm:left-7 sm:top-7">
+<div className="absolute left-5 top-5 z-20 flex flex-col items-start gap-2 sm:left-7 sm:top-7">
 
-  <span
-    className={
-      shopIsOpen
-        ? "text-[#159447]"
-        : "text-red-500"
+  {/* SHOP STATUS */}
+
+  <div className="flex items-center gap-2 rounded-full border border-white/20 bg-white/90 px-3.5 py-2 text-[9px] font-black tracking-[0.03em] shadow-[0_4px_18px_rgba(0,0,0,.15)] backdrop-blur-md">
+
+    <span
+      className={
+        shopIsOpen
+          ? "text-[#159447]"
+          : "text-red-500"
+      }
+    >
+      ●
+    </span>
+
+    {shopIsOpen
+      ? "OPEN NOW"
+      : "CLOSED"}
+
+  </div>
+
+  {/* FAVOURITE */}
+
+  <button
+    type="button"
+    onClick={handleToggleFavourite}
+    disabled={authLoading || favouriteLoading}
+    aria-label={
+      isFavourite
+        ? "Remove shop from favourites"
+        : "Add shop to favourites"
     }
+    className="flex items-center gap-2 rounded-full border border-white/20 bg-white/90 px-3.5 py-2 text-[9px] font-black tracking-[0.03em] text-black shadow-[0_4px_18px_rgba(0,0,0,.15)] backdrop-blur-md transition hover:bg-white active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-70"
   >
-    ●
-  </span>
 
-  {shopIsOpen
-    ? "OPEN NOW"
-    : "CLOSED"}
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill={isFavourite ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={
+        isFavourite
+          ? "text-red-500"
+          : "text-black/70"
+      }
+    >
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78Z" />
+    </svg>
+
+    {favouriteLoading
+      ? "SAVING..."
+      : isFavourite
+      ? "FAVOURITED"
+      : "ADD TO FAVOURITES"}
+
+  </button>
 
 </div>
 
@@ -1568,31 +1731,44 @@ const handleSubmitReview = async () => {
     </p>
   </div>
 
-  <button
-    type="button"
-    onClick={() =>
-      router.push(
-        `/shop-products/${encodeURIComponent(shop.slug)}`
-      )
+<button
+  type="button"
+  onClick={() => {
+    if (!shopIsOpen) {
+      setShowClosedShopModal(true);
+      return;
     }
-    className="group flex shrink-0 items-center gap-1.5 rounded-full bg-[#111] px-4 py-2.5 text-[10px] font-black text-white transition hover:bg-[#222] active:scale-[0.98] sm:px-5 sm:py-3 sm:text-[11px]"
-  >
-    View products
 
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="transition-transform duration-200 group-hover:translate-x-0.5"
-    >
-      <path d="m9 18 6-6-6-6" />
-    </svg>
-  </button>
+    router.push(
+      `/shop-products/${encodeURIComponent(shop.slug)}`
+    );
+  }}
+  className={`group flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2.5 text-[10px] font-black transition active:scale-[0.98] sm:px-5 sm:py-3 sm:text-[11px] ${
+    shopIsOpen
+      ? "bg-[#111] text-white hover:bg-[#222]"
+      : "cursor-pointer bg-black/[0.08] text-black/35 hover:bg-black/[0.11]"
+  }`}
+>
+  View products
+
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={`transition-transform duration-200 ${
+      shopIsOpen
+        ? "group-hover:translate-x-0.5"
+        : ""
+    }`}
+  >
+    <path d="m9 18 6-6-6-6" />
+  </svg>
+</button>
 
 </div>
 
@@ -2105,6 +2281,57 @@ const handleSubmitReview = async () => {
 
         </section>
       )}
+
+      {showClosedShopModal && (
+      <div
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-5 backdrop-blur-[3px]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shop-closed-title"
+      >
+        <div className="w-full max-w-[380px] rounded-[24px] border border-black/[0.07] bg-white p-6 shadow-[0_25px_80px_rgba(0,0,0,.18)]">
+<div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[16px] bg-black/[0.05] text-black/45">
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M4 10.5V20h16v-9.5" />
+    <path d="M3 10.5 5 4h14l2 6.5" />
+    <path d="M3 10.5c.5 1 1.5 1.5 2.5 1.5S7.5 11.5 8 10.5c.5 1 1.5 1.5 2.5 1.5s2-.5 2.5-1.5c.5 1 1.5 1.5 2.5 1.5s2-.5 2.5-1.5c.5 1 1.5 1.5 2.5 1.5S20.5 11.5 21 10.5" />
+    <path d="M9 20v-5h6v5" />
+  </svg>
+</div>
+
+          <h2
+            id="shop-closed-title"
+            className="mt-5 text-center text-[18px] font-black tracking-[-0.04em]"
+          >
+            Shop Closed
+          </h2>
+
+          <p className="mt-2 text-center text-[11px] leading-5 text-black/45">
+            This shop is currently closed. Please try again during its opening hours.
+          </p>
+
+          <button
+            type="button"
+            onClick={() =>
+              setShowClosedShopModal(false)
+            }
+            className="mt-5 flex h-11 w-full items-center justify-center rounded-full bg-[#111] text-[10px] font-black text-white transition hover:bg-[#222] active:scale-[0.98]"
+          >
+            OK
+          </button>
+
+        </div>
+      </div>
+    )}
 
     </main>
   );

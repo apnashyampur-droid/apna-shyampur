@@ -4,27 +4,34 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation"; 
 import { createClient } from "@/lib/supabase/client"; 
  
-const heroSlides = [ 
-  { 
-    title: "Order From Your Padosi Ki Dukaan", 
-    description: 
-      "Fresh essentials, everyday products and more — delivered from shops around you.", 
-    image: 
+const heroSlides = [
+  {
+    title: "Order From Your Padosi Ki Dukaan",
+    description:
+      "Fresh essentials, everyday products and more — delivered from shops around you.",
+    image:
       "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1600&q=90",
   },
   {
-   title: "Your Local Shops in One Place",
+    title: "Your Local Shops in One Place",
     description:
       "Discover nearby shops, explore what they offer and order without going far.",
     image:
       "https://images.unsplash.com/photo-1604719312566-8912e9227c6a?auto=format&fit=crop&w=1600&q=90",
   },
   {
- title: "Keep Local Money Local",
-description:
-  "Support local businesses, create local opportunities, and help your community grow.",
+    title: "Keep Local Money Local",
+    description:
+      "Support local businesses, create local opportunities, and help your community grow.",
     image:
       "https://images.unsplash.com/photo-1556740749-887f6717d7e4?auto=format&fit=crop&w=1600&q=90",
+  },
+  {
+    title: "9 Minutes Delivery",
+    description:
+      "Get your everyday essentials delivered to your doorstep in as little as 9 minutes.",
+    image:
+      "https://images.unsplash.com/photo-1616401784845-180882ba9ba8?auto=format&fit=crop&w=1600&q=90",
   },
 ];
 
@@ -377,6 +384,7 @@ useEffect(() => {
   address,
   opening_time,
   closing_time,
+  is_manually_closed,
   is_active,
   is_featured,
   featured_order
@@ -1101,22 +1109,30 @@ useEffect(() => {
 
   <div className="absolute left-4 top-4 z-20 rounded-full bg-white/90 px-3 py-1.5 text-[9px] font-bold backdrop-blur">
 
-    <span
-      className={
-        isShopOpen(shop.opening_time, shop.closing_time)
-          ? "text-[#159447]"
-          : "text-red-500"
-      }
-    >
-      ●
-    </span>
+   <span
+  className={
+    !shop.is_manually_closed &&
+    isShopOpen(
+      shop.opening_time,
+      shop.closing_time
+    )
+      ? "text-[#159447]"
+      : "text-red-500"
+  }
+>
+  ●
+</span>
 
-    {" "}
+{" "}
 
-    {isShopOpen(shop.opening_time, shop.closing_time)
-      ? "OPEN NOW"
-      : "CLOSED"}
-
+{!shop.is_manually_closed &&
+isShopOpen(
+  shop.opening_time,
+  shop.closing_time
+)
+  ? "OPEN NOW"
+  : "CLOSED"}
+  
   </div>
 
  {/* ACTIVE DISCOUNT */}

@@ -24,6 +24,9 @@ type LocationCandidate = {
 
 const supabase = createClient();
 
+const PROFILE_SELECT =
+  "full_name, avatar_url, phone, address, latitude, longitude, location_updated_at";
+
 const SERVICE_CENTER = {
   lat: 30.0614,
   lng: 78.2234,
@@ -115,62 +118,103 @@ export default function ProfileScreen() {
   useEffect(() => {
     let mounted = true;
 
-    const loadProfile = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+   const loadProfile = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-      if (!mounted) return;
+  if (!mounted) return;
 
-      if (!user) {
-        router.replace("/signin");
-        return;
-      }
+  if (!user) {
+    router.replace("/signin");
+    return;
+  }
 
-      setUser(user);
+  setUser(user);
 
-      const { data: profileData, error } = await supabase
+  const { data: profileData, error } = await supabase
+    .from("profiles")
+    .select(PROFILE_SELECT)
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Profile fetch error:", error);
+  }
+
+  let finalProfile = profileData;
+
+  /*
+   * If this Google user does not have a profiles row yet,
+   * create it now.
+   */
+  if (!profileData && !error) {
+    const metadata = user.user_metadata ?? {};
+
+    const { data: createdProfile, error: createError } =
+      await supabase
         .from("profiles")
-        .select(
-          "full_name, avatar_url, phone, address, latitude, longitude, location_updated_at"
-        )
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (error) {
-        console.error("Profile fetch error:", error);
-      }
-
-      if (mounted) {
-        setProfile({
+        .insert({
+          id: user.id,
           full_name:
-            profileData?.full_name ??
-            user.user_metadata?.full_name ??
-            user.user_metadata?.name ??
+            metadata.full_name ??
+            metadata.name ??
             "",
-
+          email: user.email ?? null,
           avatar_url:
-            profileData?.avatar_url ?? null,
+            metadata.avatar_url ??
+            metadata.picture ??
+            null,
+        })
+        .select(PROFILE_SELECT)
+        .single();
 
-          phone:
-            profileData?.phone ?? "",
+    if (createError) {
+      console.error(
+        "Profile creation error:",
+        createError
+      );
+    } else {
+      finalProfile = createdProfile;
+    }
+  }
 
-          address:
-            profileData?.address ?? "",
+  if (!mounted) return;
 
-          latitude:
-            profileData?.latitude ?? null,
+  setProfile({
+    full_name:
+      finalProfile?.full_name ??
+      user.user_metadata?.full_name ??
+      user.user_metadata?.name ??
+      "",
 
-          longitude:
-            profileData?.longitude ?? null,
+    avatar_url:
+      finalProfile?.avatar_url ??
+      null,
 
-          location_updated_at:
-            profileData?.location_updated_at ?? null,
-        });
+    phone:
+      finalProfile?.phone ??
+      "",
 
-        setLoading(false);
-      }
-    };
+    address:
+      finalProfile?.address ??
+      "",
+
+    latitude:
+      finalProfile?.latitude ??
+      null,
+
+    longitude:
+      finalProfile?.longitude ??
+      null,
+
+    location_updated_at:
+      finalProfile?.location_updated_at ??
+      null,
+  });
+
+  setLoading(false);
+};
 
     loadProfile();
 
@@ -208,44 +252,75 @@ export default function ProfileScreen() {
   };
 
   const saveField = async (
-    field: "full_name" | "phone"
-  ) => {
-    if (!user || !profile) return;
+  field: "full_name" | "phone"
+) => {
+  if (!user || !profile) return;
 
-    const value = editValue.trim();
+  const value = editValue.trim();
 
-    if (!value) {
-      return;
-    }
+  if (!value) {
+    return;
+  }
 
-    setSaving(true);
+  setSaving(true);
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        [field]: value,
-      })
-      .eq("id", user.id);
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({
+      [field]: value,
+    })
+    .eq("id", user.id)
+    .select(PROFILE_SELECT)
+    .maybeSingle();
 
-    if (error) {
-      console.error("Profile update error:", error);
+  if (error) {
+    console.error("Profile update error:", error);
+    setSaving(false);
+    return;
+  }
+
+  /*
+   * If no row existed for some reason, create it instead.
+   */
+  if (!data) {
+    const { data: createdProfile, error: createError } =
+      await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: user.id,
+            email: user.email ?? null,
+            avatar_url:
+              user.user_metadata?.avatar_url ??
+              user.user_metadata?.picture ??
+              null,
+            [field]: value,
+          },
+          {
+            onConflict: "id",
+          }
+        )
+        .select(PROFILE_SELECT)
+        .single();
+
+    if (createError) {
+      console.error(
+        "Profile upsert error:",
+        createError
+      );
       setSaving(false);
       return;
     }
 
-    setProfile((current) =>
-      current
-        ? {
-            ...current,
-            [field]: value,
-          }
-        : current
-    );
+    setProfile(createdProfile as ProfileData);
+  } else {
+    setProfile(data as ProfileData);
+  }
 
-    setEditing(null);
-    setEditValue("");
-    setSaving(false);
-  };
+  setEditing(null);
+  setEditValue("");
+  setSaving(false);
+};
 
   const openLocationPicker = () => {
     setLocationMode("current");
@@ -386,18 +461,69 @@ export default function ProfileScreen() {
 
     const updatedAt = new Date().toISOString();
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        address: locationCandidate.address.trim(),
-        latitude: locationCandidate.latitude,
-        longitude: locationCandidate.longitude,
-        location_updated_at: updatedAt,
-      })
-      .eq("id", user.id);
+  const locationPatch = {
+    address: locationCandidate.address.trim(),
+    latitude: locationCandidate.latitude,
+    longitude: locationCandidate.longitude,
+    location_updated_at: updatedAt,
+  };
 
-    if (error) {
-      console.error("Location save error:", error);
+  const { data, error } = await supabase
+    .from("profiles")
+    .update(locationPatch)
+    .eq("id", user.id)
+    .select(PROFILE_SELECT)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Location save error:", error);
+
+    setLocationLoading(false);
+
+    setLocationError(
+      "We couldn't save your location. Please try again."
+    );
+
+    return;
+  }
+
+  /*
+   * Safety fallback:
+   * If the profile row somehow does not exist,
+   * create it instead of silently losing the location.
+   */
+  if (!data) {
+    const { data: createdProfile, error: createError } =
+      await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: user.id,
+            email: user.email ?? null,
+            full_name:
+              profile?.full_name ??
+              user.user_metadata?.full_name ??
+              user.user_metadata?.name ??
+              "",
+            avatar_url:
+              profile?.avatar_url ??
+              user.user_metadata?.avatar_url ??
+              user.user_metadata?.picture ??
+              null,
+            ...locationPatch,
+          },
+          {
+            onConflict: "id",
+          }
+        )
+        .select(PROFILE_SELECT)
+        .single();
+
+    if (createError) {
+      console.error(
+        "Location profile upsert error:",
+        createError
+      );
 
       setLocationLoading(false);
 
@@ -408,47 +534,48 @@ export default function ProfileScreen() {
       return;
     }
 
-    setProfile((current) =>
-      current
-        ? {
-            ...current,
-            address: locationCandidate.address.trim(),
-            latitude: locationCandidate.latitude,
-            longitude: locationCandidate.longitude,
-            location_updated_at: updatedAt,
-          }
-        : current
-    );
+    setProfile(createdProfile as ProfileData);
+  } else {
+    setProfile(data as ProfileData);
+  }
 
-    setLocationLoading(false);
-    setLocationModal(false);
-    setLocationCandidate(null);
-    setLocationMode(null);
-    setLocationError("");
-  };
+  setLocationLoading(false);
+  setLocationModal(false);
+  setLocationCandidate(null);
+  setLocationMode(null);
+  setLocationError("");
+};
 
   const deleteLocation = async () => {
-    if (!user || !profile?.address) return;
+  if (!user || !profile?.address) return;
 
-    setDeletingLocation(true);
+  setDeletingLocation(true);
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        address: null,
-        latitude: null,
-        longitude: null,
-        location_updated_at: null,
-      })
-      .eq("id", user.id);
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({
+      address: null,
+      latitude: null,
+      longitude: null,
+      location_updated_at: null,
+    })
+    .eq("id", user.id)
+    .select(PROFILE_SELECT)
+    .maybeSingle();
 
-    if (error) {
-      console.error("Location delete error:", error);
+  if (error) {
+    console.error("Location delete error:", error);
+    setDeletingLocation(false);
+    return;
+  }
 
-      setDeletingLocation(false);
-      return;
-    }
-
+  if (data) {
+    setProfile(data as ProfileData);
+  } else {
+    /*
+     * The row should normally exist.
+     * Keep the UI consistent even if it disappeared.
+     */
     setProfile((current) =>
       current
         ? {
@@ -460,10 +587,11 @@ export default function ProfileScreen() {
           }
         : current
     );
+  }
 
-    setDeletingLocation(false);
-    setDeleteLocationOpen(false);
-  };
+  setDeletingLocation(false);
+  setDeleteLocationOpen(false);
+};
 
   const displayName =
     profile?.full_name ||

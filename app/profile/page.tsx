@@ -208,29 +208,69 @@ export default function ProfileScreen() {
   };
 
   const saveField = async (
-    field: "full_name" | "phone"
-  ) => {
-    if (!user || !profile) return;
+  field: "full_name" | "phone"
+) => {
+  if (!user || !profile) return;
 
-    const value = editValue.trim();
+  const value = editValue.trim();
 
-    if (!value) {
+  if (!value) return;
+
+  setSaving(true);
+
+  try {
+    // First try updating the existing profile row.
+    const { data: updatedProfile, error: updateError } =
+      await supabase
+        .from("profiles")
+        .update({
+          [field]: value,
+        })
+        .eq("id", user.id)
+        .select("id")
+        .maybeSingle();
+
+    if (updateError) {
+      console.error("Profile update error:", updateError);
+      setSaving(false);
       return;
     }
 
-    setSaving(true);
+    // If no row existed, create it.
+    if (!updatedProfile) {
+      const { error: insertError } =
+        await supabase.from("profiles").insert({
+          id: user.id,
+          email: user.email ?? null,
+          full_name:
+            field === "full_name"
+              ? value
+              : profile.full_name || null,
+          avatar_url:
+            profile.avatar_url ??
+            user.user_metadata?.avatar_url ??
+            user.user_metadata?.picture ??
+            null,
+          phone:
+            field === "phone"
+              ? value
+              : profile.phone || null,
+          address: profile.address || null,
+          latitude: profile.latitude,
+          longitude: profile.longitude,
+          location_updated_at:
+            profile.location_updated_at,
+        });
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        [field]: value,
-      })
-      .eq("id", user.id);
+      if (insertError) {
+        console.error(
+          "Profile insert error:",
+          insertError
+        );
 
-    if (error) {
-      console.error("Profile update error:", error);
-      setSaving(false);
-      return;
+        setSaving(false);
+        return;
+      }
     }
 
     setProfile((current) =>
@@ -244,8 +284,12 @@ export default function ProfileScreen() {
 
     setEditing(null);
     setEditValue("");
+  } catch (error) {
+    console.error("Unexpected profile save error:", error);
+  } finally {
     setSaving(false);
-  };
+  }
+};
 
   const openLocationPicker = () => {
     setLocationMode("current");
@@ -360,61 +404,108 @@ export default function ProfileScreen() {
     );
   };
 
-  const saveLocation = async () => {
-    if (
-      !user ||
-      !locationCandidate?.address.trim() ||
-      locationCandidate.latitude === null ||
-      locationCandidate.longitude === null
-    ) {
-      return;
-    }
+ const saveLocation = async () => {
+  if (
+    !user ||
+    !locationCandidate?.address.trim() ||
+    locationCandidate.latitude === null ||
+    locationCandidate.longitude === null
+  ) {
+    return;
+  }
 
-    if (
-      !isInsideServiceArea(
-        locationCandidate.latitude,
-        locationCandidate.longitude
-      )
-    ) {
-      setLocationError(
-        "Sorry, Apna Shyampur is not available at your current location yet."
+  if (
+    !isInsideServiceArea(
+      locationCandidate.latitude,
+      locationCandidate.longitude
+    )
+  ) {
+    setLocationError(
+      "Sorry, Apna Shyampur is not available at your current location yet."
+    );
+    return;
+  }
+
+  setLocationLoading(true);
+
+  const address = locationCandidate.address.trim();
+  const latitude = locationCandidate.latitude;
+  const longitude = locationCandidate.longitude;
+  const updatedAt = new Date().toISOString();
+
+  try {
+    const { data: updatedProfile, error: updateError } =
+      await supabase
+        .from("profiles")
+        .update({
+          address,
+          latitude,
+          longitude,
+          location_updated_at: updatedAt,
+        })
+        .eq("id", user.id)
+        .select("id")
+        .maybeSingle();
+
+    if (updateError) {
+      console.error(
+        "Location update error:",
+        updateError
       );
-      return;
-    }
-
-    setLocationLoading(true);
-
-    const updatedAt = new Date().toISOString();
-
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        address: locationCandidate.address.trim(),
-        latitude: locationCandidate.latitude,
-        longitude: locationCandidate.longitude,
-        location_updated_at: updatedAt,
-      })
-      .eq("id", user.id);
-
-    if (error) {
-      console.error("Location save error:", error);
-
-      setLocationLoading(false);
 
       setLocationError(
         "We couldn't save your location. Please try again."
       );
 
+      setLocationLoading(false);
       return;
+    }
+
+    // No profile row exists — create it.
+    if (!updatedProfile) {
+      const { error: insertError } =
+        await supabase.from("profiles").insert({
+          id: user.id,
+          email: user.email ?? null,
+          full_name:
+            profile?.full_name ||
+            user.user_metadata?.full_name ||
+            user.user_metadata?.name ||
+            null,
+          avatar_url:
+            profile?.avatar_url ??
+            user.user_metadata?.avatar_url ??
+            user.user_metadata?.picture ??
+            null,
+          phone: profile?.phone || null,
+          address,
+          latitude,
+          longitude,
+          location_updated_at: updatedAt,
+        });
+
+      if (insertError) {
+        console.error(
+          "Location profile insert error:",
+          insertError
+        );
+
+        setLocationError(
+          "We couldn't save your location. Please try again."
+        );
+
+        setLocationLoading(false);
+        return;
+      }
     }
 
     setProfile((current) =>
       current
         ? {
             ...current,
-            address: locationCandidate.address.trim(),
-            latitude: locationCandidate.latitude,
-            longitude: locationCandidate.longitude,
+            address,
+            latitude,
+            longitude,
             location_updated_at: updatedAt,
           }
         : current
@@ -425,7 +516,18 @@ export default function ProfileScreen() {
     setLocationCandidate(null);
     setLocationMode(null);
     setLocationError("");
-  };
+  } catch (error) {
+    console.error(
+      "Unexpected location save error:",
+      error
+    );
+
+    setLocationLoading(false);
+    setLocationError(
+      "We couldn't save your location. Please try again."
+    );
+  }
+};
 
   const deleteLocation = async () => {
     if (!user || !profile?.address) return;

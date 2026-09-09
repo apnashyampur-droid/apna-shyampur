@@ -52,7 +52,8 @@ function distanceInKm(
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
 
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const c =
+    2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return earthRadius * c;
 }
@@ -80,7 +81,8 @@ export default function ProfileScreen() {
   const router = useRouter();
 
   const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [profile, setProfile] =
+    useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [editing, setEditing] =
@@ -89,13 +91,8 @@ export default function ProfileScreen() {
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
 
-  /*
-  |--------------------------------------------------------------------------
-  | Location state
-  |--------------------------------------------------------------------------
-  */
-
-  const [locationModal, setLocationModal] = useState(false);
+  const [locationModal, setLocationModal] =
+    useState(false);
 
   const [locationMode, setLocationMode] =
     useState<"current" | null>(null);
@@ -118,103 +115,112 @@ export default function ProfileScreen() {
   useEffect(() => {
     let mounted = true;
 
-   const loadProfile = async () => {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    const loadProfile = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-  if (!mounted) return;
+      if (!mounted) return;
 
-  if (!user) {
-    router.replace("/signin");
-    return;
-  }
+      if (!user) {
+        router.replace("/signin");
+        return;
+      }
 
-  setUser(user);
+      setUser(user);
 
-  const { data: profileData, error } = await supabase
-    .from("profiles")
-    .select(PROFILE_SELECT)
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Profile fetch error:", error);
-  }
-
-  let finalProfile = profileData;
-
-  /*
-   * If this Google user does not have a profiles row yet,
-   * create it now.
-   */
-  if (!profileData && !error) {
-    const metadata = user.user_metadata ?? {};
-
-    const { data: createdProfile, error: createError } =
-      await supabase
+      const {
+        data: profileData,
+        error,
+      } = await supabase
         .from("profiles")
-        .insert({
-          id: user.id,
-          full_name:
-            metadata.full_name ??
-            metadata.name ??
-            "",
-          email: user.email ?? null,
-          avatar_url:
-            metadata.avatar_url ??
-            metadata.picture ??
-            null,
-        })
         .select(PROFILE_SELECT)
-        .single();
+        .eq("id", user.id)
+        .maybeSingle();
 
-    if (createError) {
-      console.error(
-        "Profile creation error:",
-        createError
-      );
-    } else {
-      finalProfile = createdProfile;
-    }
-  }
+      if (error) {
+        console.error("Profile fetch error:", error);
+      }
 
-  if (!mounted) return;
+      let finalProfile = profileData;
 
-  setProfile({
-    full_name:
-      finalProfile?.full_name ??
-      user.user_metadata?.full_name ??
-      user.user_metadata?.name ??
-      "",
+      /*
+       * IMPORTANT:
+       * New Google users may not have a profiles row yet.
+       * Create it immediately so later UPDATE operations
+       * never silently update zero rows.
+       */
+      if (!profileData && !error) {
+        const metadata = user.user_metadata ?? {};
 
-    avatar_url:
-      finalProfile?.avatar_url ??
-      null,
+        const {
+          data: createdProfile,
+          error: createError,
+        } = await supabase
+          .from("profiles")
+          .insert({
+            id: user.id,
+            full_name:
+              metadata.full_name ??
+              metadata.name ??
+              "",
+            email: user.email ?? null,
+            avatar_url:
+              metadata.avatar_url ??
+              metadata.picture ??
+              null,
+          })
+          .select(PROFILE_SELECT)
+          .single();
 
-    phone:
-      finalProfile?.phone ??
-      "",
+        if (createError) {
+          console.error(
+            "Profile creation error:",
+            createError
+          );
+        } else {
+          finalProfile = createdProfile;
+        }
+      }
 
-    address:
-      finalProfile?.address ??
-      "",
+      if (!mounted) return;
 
-    latitude:
-      finalProfile?.latitude ??
-      null,
+      setProfile({
+        full_name:
+          finalProfile?.full_name ??
+          user.user_metadata?.full_name ??
+          user.user_metadata?.name ??
+          "",
 
-    longitude:
-      finalProfile?.longitude ??
-      null,
+        avatar_url:
+          finalProfile?.avatar_url ??
+          user.user_metadata?.avatar_url ??
+          user.user_metadata?.picture ??
+          null,
 
-    location_updated_at:
-      finalProfile?.location_updated_at ??
-      null,
-  });
+        phone:
+          finalProfile?.phone ??
+          "",
 
-  setLoading(false);
-};
+        address:
+          finalProfile?.address ??
+          "",
+
+        latitude:
+          finalProfile?.latitude ??
+          null,
+
+        longitude:
+          finalProfile?.longitude ??
+          null,
+
+        location_updated_at:
+          finalProfile?.location_updated_at ??
+          null,
+      });
+
+      setLoading(false);
+    };
 
     loadProfile();
 
@@ -234,7 +240,9 @@ export default function ProfileScreen() {
     };
   }, [router]);
 
-  const startEditing = (field: EditingField) => {
+  const startEditing = (
+    field: EditingField
+  ) => {
     if (!profile || !field) return;
 
     if (field === "address") {
@@ -252,75 +260,122 @@ export default function ProfileScreen() {
   };
 
   const saveField = async (
-  field: "full_name" | "phone"
-) => {
-  if (!user || !profile) return;
+    field: "full_name" | "phone"
+  ) => {
+    if (!user || !profile) return;
 
-  const value = editValue.trim();
+    const value =
+      field === "phone"
+        ? editValue
+            .replace(/\D/g, "")
+            .slice(0, 10)
+        : editValue.trim();
 
-  if (!value) {
-    return;
-  }
+    if (!value) return;
 
-  setSaving(true);
+    setSaving(true);
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({
-      [field]: value,
-    })
-    .eq("id", user.id)
-    .select(PROFILE_SELECT)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Profile update error:", error);
-    setSaving(false);
-    return;
-  }
-
-  /*
-   * If no row existed for some reason, create it instead.
-   */
-  if (!data) {
-    const { data: createdProfile, error: createError } =
-      await supabase
+    try {
+      /*
+       * First check whether the profile row exists.
+       */
+      const {
+        data: existingProfile,
+        error: checkError,
+      } = await supabase
         .from("profiles")
-        .upsert(
-          {
-            id: user.id,
-            email: user.email ?? null,
-            avatar_url:
-              user.user_metadata?.avatar_url ??
-              user.user_metadata?.picture ??
-              null,
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error(
+          "Profile check error:",
+          checkError
+        );
+        return;
+      }
+
+      /*
+       * Existing profile -> UPDATE
+       */
+      if (existingProfile) {
+        const {
+          error: updateError,
+        } = await supabase
+          .from("profiles")
+          .update({
             [field]: value,
-          },
-          {
-            onConflict: "id",
-          }
-        )
-        .select(PROFILE_SELECT)
-        .single();
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq("id", user.id);
 
-    if (createError) {
-      console.error(
-        "Profile upsert error:",
-        createError
+        if (updateError) {
+          console.error(
+            "Profile update error:",
+            updateError
+          );
+          return;
+        }
+      }
+
+      /*
+       * Missing profile -> INSERT
+       */
+      else {
+        const metadata =
+          user.user_metadata ?? {};
+
+        const insertPayload: any = {
+          id: user.id,
+          email: user.email ?? null,
+          full_name:
+            metadata.full_name ??
+            metadata.name ??
+            "",
+          avatar_url:
+            metadata.avatar_url ??
+            metadata.picture ??
+            null,
+          phone: null,
+        };
+
+        insertPayload[field] = value;
+
+        const {
+          error: insertError,
+        } = await supabase
+          .from("profiles")
+          .insert(insertPayload);
+
+        if (insertError) {
+          console.error(
+            "Profile insert error:",
+            insertError
+          );
+          return;
+        }
+      }
+
+      /*
+       * Update local UI only after DB operation succeeds.
+       */
+      setProfile((current) =>
+        current
+          ? {
+              ...current,
+              [field]: value,
+            }
+          : current
       );
+
+      setEditing(null);
+      setEditValue("");
+    } finally {
       setSaving(false);
-      return;
     }
-
-    setProfile(createdProfile as ProfileData);
-  } else {
-    setProfile(data as ProfileData);
-  }
-
-  setEditing(null);
-  setEditValue("");
-  setSaving(false);
-};
+  };
 
   const openLocationPicker = () => {
     setLocationMode("current");
@@ -345,14 +400,24 @@ export default function ProfileScreen() {
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const latitude = position.coords.latitude;
-        const longitude = position.coords.longitude;
+        const latitude =
+          position.coords.latitude;
 
-        if (!isInsideServiceArea(latitude, longitude)) {
+        const longitude =
+          position.coords.longitude;
+
+        if (
+          !isInsideServiceArea(
+            latitude,
+            longitude
+          )
+        ) {
           setLocationLoading(false);
+
           setLocationError(
             "Sorry, Apna Shyampur is not available at your current location yet."
           );
+
           return;
         }
 
@@ -360,22 +425,30 @@ export default function ProfileScreen() {
           const response = await fetch(
             `/api/geocode?lat=${encodeURIComponent(
               latitude
-            )}&lng=${encodeURIComponent(longitude)}`
+            )}&lng=${encodeURIComponent(
+              longitude
+            )}`
           );
 
-          const data = await response.json();
+          const data =
+            await response.json();
 
-          if (!response.ok || !data.address) {
+          if (
+            !response.ok ||
+            !data.address
+          ) {
             console.error(
               "Reverse geocoding failed:",
               data
             );
 
             setLocationLoading(false);
+
             setLocationError(
               data?.error ||
                 "We found your location, but couldn't get its address. Please try again."
             );
+
             return;
           }
 
@@ -394,6 +467,7 @@ export default function ProfileScreen() {
           );
 
           setLocationLoading(false);
+
           setLocationError(
             "We found your location, but couldn't get its address. Please try again."
           );
@@ -401,10 +475,13 @@ export default function ProfileScreen() {
       },
 
       (error) => {
-        console.error("Geolocation error:", {
-          code: error.code,
-          message: error.message,
-        });
+        console.error(
+          "Geolocation error:",
+          {
+            code: error.code,
+            message: error.message,
+          }
+        );
 
         setLocationLoading(false);
 
@@ -454,75 +531,141 @@ export default function ProfileScreen() {
       setLocationError(
         "Sorry, Apna Shyampur is not available at your current location yet."
       );
+
       return;
     }
 
     setLocationLoading(true);
 
-    const updatedAt = new Date().toISOString();
+    try {
+      const now =
+        new Date().toISOString();
 
-  const locationPatch = {
-    address: locationCandidate.address.trim(),
-    latitude: locationCandidate.latitude,
-    longitude: locationCandidate.longitude,
-    location_updated_at: updatedAt,
-  };
+      const locationPatch = {
+        address:
+          locationCandidate.address.trim(),
+        latitude:
+          locationCandidate.latitude,
+        longitude:
+          locationCandidate.longitude,
+        location_updated_at: now,
+        updated_at: now,
+      };
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .update(locationPatch)
-    .eq("id", user.id)
-    .select(PROFILE_SELECT)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Location save error:", error);
-
-    setLocationLoading(false);
-
-    setLocationError(
-      "We couldn't save your location. Please try again."
-    );
-
-    return;
-  }
-
-  /*
-   * Safety fallback:
-   * If the profile row somehow does not exist,
-   * create it instead of silently losing the location.
-   */
-  if (!data) {
-    const { data: createdProfile, error: createError } =
-      await supabase
+      /*
+       * Check profile existence first.
+       */
+      const {
+        data: existingProfile,
+        error: checkError,
+      } = await supabase
         .from("profiles")
-        .upsert(
-          {
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error(
+          "Profile check error:",
+          checkError
+        );
+
+        setLocationError(
+          "We couldn't save your location. Please try again."
+        );
+
+        return;
+      }
+
+      /*
+       * Existing profile -> UPDATE
+       */
+      if (existingProfile) {
+        const {
+          error: updateError,
+        } = await supabase
+          .from("profiles")
+          .update(locationPatch)
+          .eq("id", user.id);
+
+        if (updateError) {
+          console.error(
+            "Location update error:",
+            updateError
+          );
+
+          setLocationError(
+            "We couldn't save your location. Please try again."
+          );
+
+          return;
+        }
+      }
+
+      /*
+       * Missing profile -> INSERT
+       */
+      else {
+        const metadata =
+          user.user_metadata ?? {};
+
+        const {
+          error: insertError,
+        } = await supabase
+          .from("profiles")
+          .insert({
             id: user.id,
             email: user.email ?? null,
             full_name:
-              profile?.full_name ??
-              user.user_metadata?.full_name ??
-              user.user_metadata?.name ??
+              metadata.full_name ??
+              metadata.name ??
               "",
             avatar_url:
-              profile?.avatar_url ??
-              user.user_metadata?.avatar_url ??
-              user.user_metadata?.picture ??
+              metadata.avatar_url ??
+              metadata.picture ??
               null,
             ...locationPatch,
-          },
-          {
-            onConflict: "id",
-          }
-        )
-        .select(PROFILE_SELECT)
-        .single();
+          });
 
-    if (createError) {
+        if (insertError) {
+          console.error(
+            "Location profile insert error:",
+            insertError
+          );
+
+          setLocationError(
+            "We couldn't save your location. Please try again."
+          );
+
+          return;
+        }
+      }
+
+      setProfile((current) =>
+        current
+          ? {
+              ...current,
+              address:
+                locationPatch.address,
+              latitude:
+                locationPatch.latitude,
+              longitude:
+                locationPatch.longitude,
+              location_updated_at:
+                locationPatch.location_updated_at,
+            }
+          : current
+      );
+
+      setLocationLoading(false);
+      setLocationModal(false);
+      setLocationCandidate(null);
+      setLocationMode(null);
+      setLocationError("");
+    } catch (error) {
       console.error(
-        "Location profile upsert error:",
-        createError
+        "Location save unexpected error:",
+        error
       );
 
       setLocationLoading(false);
@@ -530,68 +673,56 @@ export default function ProfileScreen() {
       setLocationError(
         "We couldn't save your location. Please try again."
       );
-
-      return;
     }
-
-    setProfile(createdProfile as ProfileData);
-  } else {
-    setProfile(data as ProfileData);
-  }
-
-  setLocationLoading(false);
-  setLocationModal(false);
-  setLocationCandidate(null);
-  setLocationMode(null);
-  setLocationError("");
-};
+  };
 
   const deleteLocation = async () => {
-  if (!user || !profile?.address) return;
+    if (!user || !profile?.address)
+      return;
 
-  setDeletingLocation(true);
+    setDeletingLocation(true);
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({
-      address: null,
-      latitude: null,
-      longitude: null,
-      location_updated_at: null,
-    })
-    .eq("id", user.id)
-    .select(PROFILE_SELECT)
-    .maybeSingle();
+    try {
+      const {
+        error,
+      } = await supabase
+        .from("profiles")
+        .update({
+          address: null,
+          latitude: null,
+          longitude: null,
+          location_updated_at: null,
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq("id", user.id);
 
-  if (error) {
-    console.error("Location delete error:", error);
-    setDeletingLocation(false);
-    return;
-  }
+      if (error) {
+        console.error(
+          "Location delete error:",
+          error
+        );
 
-  if (data) {
-    setProfile(data as ProfileData);
-  } else {
-    /*
-     * The row should normally exist.
-     * Keep the UI consistent even if it disappeared.
-     */
-    setProfile((current) =>
-      current
-        ? {
-            ...current,
-            address: null,
-            latitude: null,
-            longitude: null,
-            location_updated_at: null,
-          }
-        : current
-    );
-  }
+        return;
+      }
 
-  setDeletingLocation(false);
-  setDeleteLocationOpen(false);
-};
+      setProfile((current) =>
+        current
+          ? {
+              ...current,
+              address: null,
+              latitude: null,
+              longitude: null,
+              location_updated_at: null,
+            }
+          : current
+      );
+
+      setDeleteLocationOpen(false);
+    } finally {
+      setDeletingLocation(false);
+    }
+  };
 
   const displayName =
     profile?.full_name ||
@@ -610,7 +741,9 @@ export default function ProfileScreen() {
       user?.user_metadata?.picture ||
       null;
 
-  const initials = (profile?.full_name || "U")
+  const initials = (
+    profile?.full_name || "U"
+  )
     .trim()
     .split(/\s+/)
     .filter(Boolean)
@@ -639,9 +772,13 @@ export default function ProfileScreen() {
 
                 <div className="mt-1 flex items-center gap-1.5 text-[7px] font-bold tracking-[0.12em] text-black/45 sm:text-[8px]">
                   <span>LOCALS</span>
-                  <span className="text-[#159447]">•</span>
+                  <span className="text-[#159447]">
+                    •
+                  </span>
                   <span>TRUSTED</span>
-                  <span className="text-[#159447]">•</span>
+                  <span className="text-[#159447]">
+                    •
+                  </span>
                   <span>FAST</span>
                 </div>
               </div>
@@ -658,20 +795,16 @@ export default function ProfileScreen() {
 
   return (
     <main className="min-h-screen bg-[#f5f6f4] text-[#111]">
-
       {/* HEADER */}
 
       <header className="sticky top-0 z-50 border-b border-black/[0.06] bg-[#f5f6f4]/90 backdrop-blur-xl">
         <div className="mx-auto flex h-[70px] max-w-[1100px] items-center justify-between px-5 sm:px-8">
-
           <div className="flex items-center gap-3">
-
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#111] text-[10px] font-black tracking-tight text-white">
               AS
             </div>
 
             <div className="leading-none">
-
               <div className="flex items-baseline gap-[4px] text-[15px] font-black tracking-[-0.05em] sm:text-[18px]">
                 <span>APNA</span>
                 <span className="text-[#159447]">
@@ -681,14 +814,16 @@ export default function ProfileScreen() {
 
               <div className="mt-1 flex items-center gap-1.5 text-[7px] font-bold tracking-[0.12em] text-black/45 sm:text-[8px]">
                 <span>LOCALS</span>
-                <span className="text-[#159447]">•</span>
+                <span className="text-[#159447]">
+                  •
+                </span>
                 <span>TRUSTED</span>
-                <span className="text-[#159447]">•</span>
+                <span className="text-[#159447]">
+                  •
+                </span>
                 <span>FAST</span>
               </div>
-
             </div>
-
           </div>
 
           <button
@@ -698,20 +833,16 @@ export default function ProfileScreen() {
           >
             Back
           </button>
-
         </div>
       </header>
 
       {/* PROFILE */}
 
       <section className="mx-auto max-w-[760px] px-5 py-10 sm:px-8 sm:py-14">
-
         {/* INTRO */}
 
         <div className="text-center">
-
           <div className="mx-auto flex h-[86px] w-[86px] items-center justify-center overflow-hidden rounded-full border-[4px] border-white bg-[#111] text-[24px] font-black text-white shadow-[0_12px_35px_rgba(0,0,0,.10)]">
-
             {avatar ? (
               <img
                 src={avatar}
@@ -721,7 +852,6 @@ export default function ProfileScreen() {
             ) : (
               initials
             )}
-
           </div>
 
           <h1 className="mt-5 text-[30px] font-black tracking-[-0.05em] sm:text-[36px]">
@@ -733,28 +863,26 @@ export default function ProfileScreen() {
           </p>
 
           <div className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[#159447]/15 bg-[#159447]/[0.07] px-3 py-1.5 text-[9px] font-bold text-[#159447]">
-            <span className="text-[7px]">●</span>
+            <span className="text-[7px]">
+              ●
+            </span>
             Google account connected
           </div>
 
           <p className="mx-auto mt-5 max-w-[390px] text-[11px] leading-5 text-black/40 sm:text-[12px]">
-            Your details, your local shopping experience.
+            Your details, your local shopping
+            experience.
           </p>
-
         </div>
 
         {/* DETAILS CARD */}
 
         <div className="mt-10 overflow-hidden rounded-[26px] border border-black/[0.07] bg-white shadow-[0_18px_60px_rgba(0,0,0,.045)]">
-
           {/* NAME */}
 
           <div className="border-b border-black/[0.06] px-5 py-5 sm:px-6">
-
             <div className="flex items-start gap-4">
-
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-[#f1f5f1] text-[#159447]">
-
                 <svg
                   width="18"
                   height="18"
@@ -768,13 +896,10 @@ export default function ProfileScreen() {
                   <circle cx="12" cy="8" r="3.5" />
                   <path d="M5 20c.8-3.8 3.1-5.8 7-5.8s6.2 2 7 5.8" />
                 </svg>
-
               </div>
 
               <div className="min-w-0 flex-1">
-
                 <div className="flex items-center justify-between gap-3">
-
                   <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-black/35">
                     Full name
                   </div>
@@ -783,7 +908,9 @@ export default function ProfileScreen() {
                     <button
                       type="button"
                       onClick={() =>
-                        startEditing("full_name")
+                        startEditing(
+                          "full_name"
+                        )
                       }
                       aria-label="Edit full name"
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.05] hover:text-black"
@@ -803,19 +930,20 @@ export default function ProfileScreen() {
                       </svg>
                     </button>
                   )}
-
                 </div>
 
                 {editing === "full_name" ? (
                   <div className="mt-2">
-
                     <input
                       autoFocus
                       value={editValue}
                       maxLength={16}
                       onChange={(e) =>
                         setEditValue(
-                          e.target.value.slice(0, 16)
+                          e.target.value.slice(
+                            0,
+                            16
+                          )
                         )
                       }
                       className="h-11 w-full rounded-[12px] border border-black/10 bg-[#fafafa] px-3 text-[13px] font-semibold outline-none transition focus:border-[#159447]/40 focus:bg-white"
@@ -823,7 +951,6 @@ export default function ProfileScreen() {
                     />
 
                     <div className="mt-2.5 flex items-center gap-2">
-
                       <button
                         type="button"
                         onClick={cancelEditing}
@@ -836,7 +963,9 @@ export default function ProfileScreen() {
                       <button
                         type="button"
                         onClick={() =>
-                          saveField("full_name")
+                          saveField(
+                            "full_name"
+                          )
                         }
                         disabled={
                           saving ||
@@ -844,11 +973,11 @@ export default function ProfileScreen() {
                         }
                         className="rounded-full bg-[#159447] px-4 py-2 text-[10px] font-bold text-white transition hover:bg-[#0f7d3b] disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        {saving ? "Saving..." : "Save"}
+                        {saving
+                          ? "Saving..."
+                          : "Save"}
                       </button>
-
                     </div>
-
                   </div>
                 ) : (
                   <div className="mt-1.5 text-[13px] font-bold">
@@ -856,21 +985,15 @@ export default function ProfileScreen() {
                       "Add your name"}
                   </div>
                 )}
-
               </div>
-
             </div>
-
           </div>
 
           {/* EMAIL */}
 
           <div className="border-b border-black/[0.06] px-5 py-5 sm:px-6">
-
             <div className="flex items-start gap-4">
-
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-[#f1f5f1] text-[#159447]">
-
                 <svg
                   width="18"
                   height="18"
@@ -890,17 +1013,14 @@ export default function ProfileScreen() {
                   />
                   <path d="m4 7 8 6 8-6" />
                 </svg>
-
               </div>
 
               <div className="min-w-0 flex-1">
-
                 <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-black/35">
                   Email address
                 </div>
 
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
-
                   <span className="break-all text-[13px] font-bold">
                     {email}
                   </span>
@@ -908,27 +1028,21 @@ export default function ProfileScreen() {
                   <span className="rounded-full bg-[#159447]/[0.08] px-2 py-1 text-[8px] font-bold text-[#159447]">
                     VERIFIED
                   </span>
-
                 </div>
 
                 <div className="mt-1 text-[10px] text-black/35">
-                  Managed through your Google account.
+                  Managed through your Google
+                  account.
                 </div>
-
               </div>
-
             </div>
-
           </div>
 
           {/* MOBILE NUMBER */}
 
           <div className="border-b border-black/[0.06] px-5 py-5 sm:px-6">
-
             <div className="flex items-start gap-4">
-
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-[#f1f5f1] text-[#159447]">
-
                 <svg
                   width="18"
                   height="18"
@@ -946,17 +1060,13 @@ export default function ProfileScreen() {
                     height="19"
                     rx="2.5"
                   />
-
                   <path d="M10 5h4" />
                   <path d="M11 18.5h2" />
                 </svg>
-
               </div>
 
               <div className="min-w-0 flex-1">
-
                 <div className="flex items-center justify-between gap-3">
-
                   <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-black/35">
                     Mobile number
                   </div>
@@ -985,14 +1095,11 @@ export default function ProfileScreen() {
                       </svg>
                     </button>
                   )}
-
                 </div>
 
                 {editing === "phone" ? (
                   <div className="mt-2">
-
                     <div className="flex h-11 overflow-hidden rounded-[12px] border border-black/10 bg-[#fafafa] transition focus-within:border-[#159447]/40 focus-within:bg-white">
-
                       <div className="flex items-center border-r border-black/[0.07] px-3 text-[12px] font-bold text-black/55">
                         +91
                       </div>
@@ -1013,15 +1120,14 @@ export default function ProfileScreen() {
                         className="min-w-0 flex-1 bg-transparent px-3 text-[13px] font-semibold outline-none"
                         placeholder="Enter mobile number"
                       />
-
                     </div>
 
                     <div className="mt-1.5 text-[9px] text-black/35">
-                      Enter your 10-digit mobile number.
+                      Enter your 10-digit
+                      mobile number.
                     </div>
 
                     <div className="mt-2.5 flex items-center gap-2">
-
                       <button
                         type="button"
                         onClick={cancelEditing}
@@ -1045,19 +1151,19 @@ export default function ProfileScreen() {
                         }
                         className="rounded-full bg-[#159447] px-4 py-2 text-[10px] font-bold text-white transition hover:bg-[#0f7d3b] disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        {saving ? "Saving..." : "Save"}
+                        {saving
+                          ? "Saving..."
+                          : "Save"}
                       </button>
-
                     </div>
-
                   </div>
                 ) : (
                   <div className="mt-1.5 flex items-center gap-2">
-
                     {profile?.phone ? (
                       <>
                         <span className="text-[13px] font-bold">
-                          +91 {profile.phone}
+                          +91{" "}
+                          {profile.phone}
                         </span>
 
                         <span className="rounded-full bg-[#159447]/[0.08] px-2 py-1 text-[8px] font-bold text-[#159447]">
@@ -1069,26 +1175,17 @@ export default function ProfileScreen() {
                         Add your mobile number
                       </span>
                     )}
-
                   </div>
                 )}
-
               </div>
-
             </div>
-
           </div>
 
           {/* DELIVERY ADDRESS */}
 
           <div className="border-t border-black/[0.06] px-5 py-5 sm:px-6">
-
             <div className="flex items-start gap-4">
-
-              {/* ICON */}
-
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-[#f1f5f1] text-[#159447]">
-
                 <svg
                   width="18"
                   height="18"
@@ -1100,29 +1197,27 @@ export default function ProfileScreen() {
                   strokeLinejoin="round"
                 >
                   <path d="M12 21s7-5.2 7-11a7 7 0 1 0-14 0c0 5.8 7 11 7 11Z" />
-                  <circle cx="12" cy="10" r="2.5" />
+                  <circle
+                    cx="12"
+                    cy="10"
+                    r="2.5"
+                  />
                 </svg>
-
               </div>
 
-              {/* CONTENT */}
-
               <div className="min-w-0 flex-1">
-
                 <div className="flex items-center justify-between gap-3">
-
                   <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-black/35">
                     Delivery address
                   </div>
 
                   {profile?.address?.trim() && (
                     <div className="flex items-center gap-1">
-
-                      {/* EDIT */}
-
                       <button
                         type="button"
-                        onClick={openLocationPicker}
+                        onClick={
+                          openLocationPicker
+                        }
                         aria-label="Edit delivery address"
                         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.05] hover:text-black"
                       >
@@ -1140,8 +1235,6 @@ export default function ProfileScreen() {
                           <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
                         </svg>
                       </button>
-
-                      {/* DELETE */}
 
                       <button
                         type="button"
@@ -1170,20 +1263,14 @@ export default function ProfileScreen() {
                           <path d="M9 7V4h6v3" />
                         </svg>
                       </button>
-
                     </div>
                   )}
-
                 </div>
 
                 {profile?.address?.trim() ? (
-
                   <div className="mt-2">
-
                     <div className="rounded-[14px] border border-black/[0.06] bg-[#fafafa] px-3.5 py-3">
-
                       <div className="flex items-start gap-2.5">
-
                         <svg
                           width="15"
                           height="15"
@@ -1204,7 +1291,6 @@ export default function ProfileScreen() {
                         </svg>
 
                         <div className="min-w-0">
-
                           <div className="text-[12px] font-semibold leading-5 text-black/75">
                             {profile.address}
                           </div>
@@ -1217,36 +1303,35 @@ export default function ProfileScreen() {
                                 Location verified
                               </div>
                             )}
-
                         </div>
-
                       </div>
-
                     </div>
 
                     <div className="mt-2 text-[9px] leading-4 text-black/30">
-                      This location will be used for delivery.
+                      This location will be used
+                      for delivery.
                     </div>
-
                   </div>
-
                 ) : (
-
                   <div className="mt-2">
-
                     <div className="text-[12px] font-semibold text-black/45">
-                      Add your delivery location
+                      Add your delivery
+                      location
                     </div>
 
                     <div className="mt-1 text-[10px] leading-4 text-black/35">
-                      Your location is required for delivery. We'll use your current
-                      device location.
+                      Your location is required
+                      for delivery. We'll use
+                      your current device
+                      location.
                     </div>
 
                     <div className="mt-3">
                       <button
                         type="button"
-                        onClick={openLocationPicker}
+                        onClick={
+                          openLocationPicker
+                        }
                         className="inline-flex items-center gap-2 rounded-full bg-[#159447] px-4 py-2.5 text-[10px] font-bold text-white transition hover:bg-[#0f7d3b]"
                       >
                         <svg
@@ -1278,23 +1363,16 @@ export default function ProfileScreen() {
                         Use current location
                       </button>
                     </div>
-
                   </div>
-
                 )}
-
               </div>
-
             </div>
-
           </div>
-
         </div>
 
         {/* FOOTNOTE */}
 
         <div className="mt-5 flex items-start gap-2 px-2 text-[9px] leading-4 text-black/30 sm:text-[10px]">
-
           <svg
             width="13"
             height="13"
@@ -1311,22 +1389,18 @@ export default function ProfileScreen() {
           </svg>
 
           <span>
-            Your profile details are used to make ordering and delivery
-            easier on Apna Shyampur.
+            Your profile details are used to
+            make ordering and delivery easier
+            on Apna Shyampur.
           </span>
-
         </div>
-
       </section>
 
       {/* FOOTER */}
 
       <footer className="border-t border-black/[0.07] bg-white">
-
-        <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-5 py-8 sm:px-8 md:flex-row md:items-center md:justify-between">
-
+        <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-5 py-8 sm:flex-row sm:items-center sm:justify-between">
           <div>
-
             <div className="flex items-baseline gap-[5px] text-[16px] font-black tracking-[-0.05em]">
               <span>APNA</span>
               <span className="text-[#159447]">
@@ -1336,12 +1410,15 @@ export default function ProfileScreen() {
 
             <div className="mt-1.5 flex items-center gap-2 text-[7px] font-bold tracking-[0.14em] text-black/45">
               <span>LOCALS</span>
-              <span className="text-[#159447]">•</span>
+              <span className="text-[#159447]">
+                •
+              </span>
               <span>TRUSTED</span>
-              <span className="text-[#159447]">•</span>
+              <span className="text-[#159447]">
+                •
+              </span>
               <span>FAST</span>
             </div>
-
           </div>
 
           <div className="text-[11px] font-semibold">
@@ -1355,30 +1432,24 @@ export default function ProfileScreen() {
               VERSE
             </span>
           </div>
-
         </div>
-
       </footer>
+
+      {/* LOCATION MODAL */}
 
       {locationModal && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/35 p-0 backdrop-blur-[3px] sm:items-center sm:p-5">
-
           <div className="w-full max-w-[500px] overflow-hidden rounded-t-[28px] bg-white shadow-[0_30px_100px_rgba(0,0,0,.20)] sm:rounded-[28px]">
-
-            {/* MODAL HEADER */}
-
             <div className="flex items-center justify-between border-b border-black/[0.06] px-5 py-4 sm:px-6">
-
               <div>
-
                 <div className="text-[15px] font-black tracking-[-0.03em]">
                   Use current location
                 </div>
 
                 <div className="mt-1 text-[10px] text-black/40">
-                  We'll use your device location to verify your delivery area.
+                  We'll use your device location
+                  to verify your delivery area.
                 </div>
-
               </div>
 
               <button
@@ -1406,20 +1477,14 @@ export default function ProfileScreen() {
                   <path d="m18 6-12 12" />
                 </svg>
               </button>
-
             </div>
 
-            {/* MODAL BODY */}
-
             <div className="px-5 py-5 sm:px-6">
-
-              {locationMode === "current" && (
+              {locationMode ===
+                "current" && (
                 <div className="rounded-[18px] border border-[#159447]/10 bg-[#159447]/[0.045] px-4 py-4">
-
                   <div className="flex items-start gap-3">
-
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#159447]/10 text-[#159447]">
-
                       <svg
                         width="18"
                         height="18"
@@ -1445,32 +1510,28 @@ export default function ProfileScreen() {
                         <path d="M2 12h3" />
                         <path d="M19 12h3" />
                       </svg>
-
                     </div>
 
                     <div>
-
                       <div className="text-[12px] font-bold">
-                        Finding your location…
+                        Finding your
+                        location…
                       </div>
 
                       <div className="mt-1 text-[10px] leading-4 text-black/40">
-                        Please allow location access when your browser asks.
-                        Your location must be within 2.5 km of Apna Shyampur.
+                        Please allow location
+                        access when your
+                        browser asks. Your
+                        location must be within
+                        2.5 km of Apna Shyampur.
                       </div>
-
                     </div>
-
                   </div>
-
                 </div>
               )}
 
-              {/* ERROR */}
-
               {locationError && (
                 <div className="mt-4 flex items-start gap-2.5 rounded-[14px] border border-red-200 bg-red-50 px-3.5 py-3">
-
                   <svg
                     width="16"
                     height="16"
@@ -1494,19 +1555,13 @@ export default function ProfileScreen() {
                   <div className="text-[10px] font-semibold leading-4 text-red-700">
                     {locationError}
                   </div>
-
                 </div>
               )}
 
-              {/* SELECTED LOCATION */}
-
               {locationCandidate && (
                 <div className="mt-4 rounded-[18px] border border-[#159447]/15 bg-[#159447]/[0.045] p-4">
-
                   <div className="flex items-start gap-3">
-
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#159447]/10 text-[#159447]">
-
                       <svg
                         width="17"
                         height="17"
@@ -1524,11 +1579,9 @@ export default function ProfileScreen() {
                           r="2.5"
                         />
                       </svg>
-
                     </div>
 
                     <div className="min-w-0 flex-1">
-
                       <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#159447]">
                         Delivery location
                       </div>
@@ -1538,20 +1591,15 @@ export default function ProfileScreen() {
                       </div>
 
                       <div className="mt-1.5 text-[8px] font-medium text-[#159447]">
-                        ✓ Delivery available at this location
+                        ✓ Delivery available at
+                        this location
                       </div>
-
                     </div>
-
                   </div>
-
                 </div>
               )}
 
-              {/* ACTIONS */}
-
               <div className="mt-5 flex items-center justify-end gap-2">
-
                 <button
                   type="button"
                   onClick={() => {
@@ -1578,25 +1626,19 @@ export default function ProfileScreen() {
                       : "Save location"}
                   </button>
                 )}
-
               </div>
-
             </div>
-
           </div>
-
         </div>
       )}
 
+      {/* DELETE LOCATION MODAL */}
+
       {deleteLocationOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/35 px-5 backdrop-blur-[3px]">
-
           <div className="w-full max-w-[390px] rounded-[24px] bg-white p-5 shadow-[0_30px_100px_rgba(0,0,0,.20)] sm:p-6">
-
             <div className="flex items-start gap-3.5">
-
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
-
                 <svg
                   width="19"
                   height="19"
@@ -1613,25 +1655,24 @@ export default function ProfileScreen() {
                   <path d="M6 7l1 13h10l1-13" />
                   <path d="M9 7V4h6v3" />
                 </svg>
-
               </div>
 
               <div className="min-w-0">
-
                 <h2 className="text-[15px] font-black tracking-[-0.02em]">
-                  Remove delivery location?
+                  Remove delivery
+                  location?
                 </h2>
 
                 <p className="mt-1.5 text-[10px] leading-4 text-black/45">
-                  Are you sure you want to remove your saved delivery location? You can add it again anytime.
+                  Are you sure you want to
+                  remove your saved delivery
+                  location? You can add it again
+                  anytime.
                 </p>
-
               </div>
-
             </div>
 
             <div className="mt-5 flex justify-end gap-2">
-
               <button
                 type="button"
                 onClick={() =>
@@ -1653,14 +1694,10 @@ export default function ProfileScreen() {
                   ? "Removing..."
                   : "Remove location"}
               </button>
-
             </div>
-
           </div>
-
         </div>
       )}
-
     </main>
   );
 }

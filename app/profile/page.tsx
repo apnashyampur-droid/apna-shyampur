@@ -300,109 +300,203 @@ export default function ProfileScreen() {
   };
 
   const getCurrentLocation = () => {
-    if (!navigator.geolocation) {
+  if (!navigator.geolocation) {
+    setLocationLoading(false);
+    setLocationError(
+      "Your browser does not support location services."
+    );
+    return;
+  }
+
+  setLocationLoading(true);
+  setLocationError("");
+  setLocationCandidate(null);
+
+  let bestPosition: GeolocationPosition | null = null;
+  let watchId: number | null = null;
+  let finished = false;
+
+  const finishLocation = async () => {
+    if (finished) return;
+    finished = true;
+
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+
+    if (!bestPosition) {
       setLocationLoading(false);
       setLocationError(
-        "Your browser does not support location services."
+        "We couldn't get a reliable GPS location. Please move outdoors and try again."
       );
       return;
     }
 
-    setLocationLoading(true);
-    setLocationError("");
-    setLocationCandidate(null);
+    const latitude = bestPosition.coords.latitude;
+    const longitude = bestPosition.coords.longitude;
+    const accuracy = bestPosition.coords.accuracy;
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const latitude = position.coords.latitude;
-        const longitude = position.coords.longitude;
+    console.log("BEST GPS LOCATION:", {
+      latitude,
+      longitude,
+      accuracyMeters: Number(accuracy.toFixed(1)),
+    });
 
-        if (!isInsideServiceArea(latitude, longitude)) {
-          setLocationLoading(false);
-          setLocationError(
-            "Sorry, Apna Shyampur is not available at your current location yet."
-          );
-          return;
-        }
+    if (accuracy > 60) {
+      setLocationLoading(false);
+      setLocationError(
+        `Your GPS accuracy is currently about ${Math.round(
+          accuracy
+        )}m. Please move outdoors or near a window and try again.`
+      );
+      return;
+    }
 
-        try {
-          const response = await fetch(
-            `/api/geocode?lat=${encodeURIComponent(
-              latitude
-            )}&lng=${encodeURIComponent(longitude)}`
-          );
+    if (!isInsideServiceArea(latitude, longitude)) {
+      setLocationLoading(false);
+      setLocationError(
+        "Sorry, Apna Shyampur is not available at your current location yet."
+      );
+      return;
+    }
 
-          const data = await response.json();
+    try {
+      const response = await fetch(
+        `/api/geocode?lat=${encodeURIComponent(
+          latitude
+        )}&lng=${encodeURIComponent(longitude)}`
+      );
 
-          if (!response.ok || !data.address) {
-            console.error(
-              "Reverse geocoding failed:",
-              data
-            );
+      const data = await response.json();
 
-            setLocationLoading(false);
-            setLocationError(
-              data?.error ||
-                "We found your location, but couldn't get its address. Please try again."
-            );
-            return;
-          }
-
-          setLocationCandidate({
-            address: data.address,
-            latitude,
-            longitude,
-          });
-
-          setLocationLoading(false);
-          setLocationError("");
-        } catch (error) {
-          console.error(
-            "Reverse geocoding request failed:",
-            error
-          );
-
-          setLocationLoading(false);
-          setLocationError(
-            "We found your location, but couldn't get its address. Please try again."
-          );
-        }
-      },
-
-      (error) => {
-        console.error("Geolocation error:", {
-          code: error.code,
-          message: error.message,
-        });
+      if (!response.ok || !data.address) {
+        console.error(
+          "Reverse geocoding failed:",
+          data
+        );
 
         setLocationLoading(false);
-
-        if (error.code === 1) {
-          setLocationError(
-            "Location access was denied. Please allow location access for this site and try again."
-          );
-        } else if (error.code === 2) {
-          setLocationError(
-            "Your device could not determine your location. Please make sure Location is turned on and try again."
-          );
-        } else if (error.code === 3) {
-          setLocationError(
-            "We couldn't determine your location in time. Please try again."
-          );
-        } else {
-          setLocationError(
-            "We couldn't access your current location. Please try again."
-          );
-        }
-      },
-
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
+        setLocationError(
+          data?.error ||
+            "We found your location, but couldn't get its address. Please try again."
+        );
+        return;
       }
-    );
+
+      setLocationCandidate({
+        address: data.address,
+        latitude,
+        longitude,
+      });
+
+      setLocationLoading(false);
+      setLocationError("");
+    } catch (error) {
+      console.error(
+        "Reverse geocoding request failed:",
+        error
+      );
+
+      setLocationLoading(false);
+      setLocationError(
+        "We found your location, but couldn't get its address. Please try again."
+      );
+    }
   };
+
+  const handlePosition = (
+    position: GeolocationPosition
+  ) => {
+    const accuracy = position.coords.accuracy;
+
+    console.log("GPS READING:", {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracyMeters: Number(accuracy.toFixed(1)),
+    });
+
+    if (
+      !bestPosition ||
+      accuracy < bestPosition.coords.accuracy
+    ) {
+      bestPosition = position;
+    }
+
+    if (accuracy <= 25) {
+      finishLocation();
+    }
+  };
+
+  const handleError = (
+    error: GeolocationPositionError
+  ) => {
+    console.error("Geolocation error:", {
+      code: error.code,
+      message: error.message,
+    });
+
+    if (
+      bestPosition &&
+      bestPosition.coords.accuracy <= 60
+    ) {
+      finishLocation();
+      return;
+    }
+
+    if (finished) return;
+
+    finished = true;
+
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+
+    setLocationLoading(false);
+
+    if (error.code === 1) {
+      setLocationError(
+        "Location access was denied. Please allow location access for this site and try again."
+      );
+    } else if (error.code === 2) {
+      setLocationError(
+        "Your device could not determine your location. Please make sure Location is turned on and try again."
+      );
+    } else if (error.code === 3) {
+      setLocationError(
+        "We couldn't determine your location in time. Please try again."
+      );
+    } else {
+      setLocationError(
+        "We couldn't access your current location. Please try again."
+      );
+    }
+  };
+
+  watchId = navigator.geolocation.watchPosition(
+    handlePosition,
+    handleError,
+    {
+      enableHighAccuracy: true,
+      timeout: 20000,
+      maximumAge: 0,
+    }
+  );
+
+  window.setTimeout(() => {
+    if (finished) return;
+
+    if (
+      bestPosition &&
+      bestPosition.coords.accuracy <= 60
+    ) {
+      finishLocation();
+    } else {
+      finishLocation();
+    }
+  }, 10000);
+};
 
  const saveLocation = async () => {
   if (

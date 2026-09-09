@@ -649,274 +649,277 @@ getCurrentLocation();
 */
 
 useEffect(() => {
-if (
-!locationModal ||
-locationMode !== "map" ||
-!googleMapsLoaded ||
-!mapContainer ||
-!selectedMapLocation ||
-!window.google?.maps
-) {
-return;
-}
+  if (
+    !locationModal ||
+    locationMode !== "map" ||
+    !googleMapsLoaded ||
+    !mapContainer ||
+    !selectedMapLocation ||
+    !window.google?.maps
+  ) {
+    return;
+  }
 
-/*
- * Cleanup any previous map.
- */
+  /*
+   * If map already exists, NEVER recreate it.
+   * This prevents the map from flashing/reloading
+   * whenever the selected pin location changes.
+   */
+  if (mapRef.current) {
+    return;
+  }
 
-mapListenersRef.current.forEach(
-  (listener) =>
-    listener.remove()
-);
+  const initialPosition =
+    new google.maps.LatLng(
+      selectedMapLocation.latitude,
+      selectedMapLocation.longitude
+    );
 
-markerListenersRef.current.forEach(
-  (listener) =>
-    listener.remove()
-);
-
-mapListenersRef.current = [];
-markerListenersRef.current = [];
-
-if (markerRef.current) {
-  markerRef.current.setMap(null);
-  markerRef.current = null;
-}
-
-mapRef.current = null;
-
-const initialPosition =
-  new google.maps.LatLng(
-    selectedMapLocation.latitude,
-    selectedMapLocation.longitude
-  );
-
-const map =
-  new google.maps.Map(
-    mapContainer,
-    {
-      center: initialPosition,
-      zoom: 18,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: false,
-      zoomControl: true,
-      gestureHandling: "greedy",
-      clickableIcons: false,
-      mapTypeId:
-        google.maps.MapTypeId.ROADMAP,
-    }
-  );
-
-mapRef.current = map;
-
-/*
- * Service area circle
- */
-
-new google.maps.Circle({
-  map,
-  center: {
-    lat: SERVICE_CENTER.lat,
-    lng: SERVICE_CENTER.lng,
-  },
-  radius:
-    SERVICE_RADIUS_KM * 1000,
-  strokeColor: "#159447",
-  strokeOpacity: 0.8,
-  strokeWeight: 1.5,
-  fillColor: "#159447",
-  fillOpacity: 0.06,
-  clickable: false,
-});
-
-/*
- * User pin
- */
-
-const marker =
-  new google.maps.Marker({
-    map,
-    position: initialPosition,
-    draggable: true,
-    title:
-      "Set your delivery location",
-  });
-
-markerRef.current = marker;
-
-/*
- * Update selected pin
- */
-
-const updateMarkerLocation =
-  async (
-    position: google.maps.LatLng
-  ) => {
-    const latitude =
-      position.lat();
-
-    const longitude =
-      position.lng();
-
-    console.log(
-      "PIN LOCATION:",
+  /*
+   * Create map only once.
+   */
+  const map =
+    new google.maps.Map(
+      mapContainer,
       {
-        latitude,
-        longitude,
+        center: initialPosition,
+        zoom: 18,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+        zoomControl: true,
+        gestureHandling: "greedy",
+        clickableIcons: false,
+        mapTypeId:
+          google.maps.MapTypeId.ROADMAP,
       }
     );
 
-    if (
-      !isInsideServiceArea(
-        latitude,
-        longitude
-      )
-    ) {
-      setLocationCandidate(
-        null
-      );
+  mapRef.current = map;
 
-      setLocationError(
-        "This location is outside Apna Shyampur's delivery area. Please place the pin inside the green area."
-      );
+  /*
+   * Service area circle
+   */
+  const serviceCircle =
+    new google.maps.Circle({
+      map,
+      center: {
+        lat: SERVICE_CENTER.lat,
+        lng: SERVICE_CENTER.lng,
+      },
+      radius:
+        SERVICE_RADIUS_KM * 1000,
+      strokeColor: "#159447",
+      strokeOpacity: 0.8,
+      strokeWeight: 1.5,
+      fillColor: "#159447",
+      fillOpacity: 0.06,
+      clickable: false,
+    });
 
-      return;
-    }
+  /*
+   * User pin
+   */
+  const marker =
+    new google.maps.Marker({
+      map,
+      position: initialPosition,
+      draggable: true,
+      title:
+        "Set your delivery location",
+    });
 
-    setLocationError("");
-    setLocationLoading(true);
+  markerRef.current = marker;
 
-    try {
-      const address =
-        await reverseGeocodeLocation(
-          latitude,
-          longitude
-        );
-
-      setSelectedMapLocation({
-        latitude,
-        longitude,
-      });
-
-      setLocationCandidate({
-        address,
-        latitude,
-        longitude,
-      });
-    } catch (error) {
-      console.error(
-        "Pin reverse geocode error:",
-        error
-      );
-
-      setLocationCandidate(
-        null
-      );
-
-      setLocationError(
-        "We found the location, but couldn't get its address. Please move the pin slightly and try again."
-      );
-    } finally {
-      setLocationLoading(false);
-    }
-  };
-
-/*
- * Drag pin
- */
-
-markerListenersRef.current.push(
-  marker.addListener(
-    "dragend",
-    () => {
-      const position =
-        marker.getPosition();
-
-      if (!position) return;
-
-      updateMarkerLocation(
-        position
-      );
-    }
-  )
-);
-
-mapListenersRef.current.push(
-  map.addListener(
-    "click",
-    (
-      event: google.maps.MapMouseEvent
+  /*
+   * Reverse geocode + update candidate.
+   *
+   * IMPORTANT:
+   * We do NOT update selectedMapLocation here.
+   * selectedMapLocation is only used to create
+   * the initial map position.
+   */
+  const updateMarkerLocation =
+    async (
+      position: google.maps.LatLng
     ) => {
-      if (!event.latLng) return;
-
       const latitude =
-        event.latLng.lat();
+        position.lat();
 
       const longitude =
-        event.latLng.lng();
+        position.lng();
 
+      console.log(
+        "PIN LOCATION:",
+        {
+          latitude,
+          longitude,
+        }
+      );
+
+      /*
+       * Check delivery area first.
+       */
       if (
         !isInsideServiceArea(
           latitude,
           longitude
         )
       ) {
-        setLocationCandidate(
-          null
-        );
+        setLocationCandidate(null);
 
         setLocationError(
-          "This location is outside Apna Shyampur's delivery area. Please select a point inside the green area."
+          "This location is outside Apna Shyampur's delivery area. Please place the pin inside the green area."
         );
 
         return;
       }
 
-      marker.setPosition(
-        event.latLng
-      );
+      setLocationError("");
+      setLocationLoading(true);
 
-      updateMarkerLocation(
-        event.latLng
-      );
-    }
-  )
-);
+      try {
+        const address =
+          await reverseGeocodeLocation(
+            latitude,
+            longitude
+          );
 
-/*
- * Initial reverse geocode
- */
+        /*
+         * Only candidate changes.
+         * Map itself stays untouched.
+         */
+        setLocationCandidate({
+          address,
+          latitude,
+          longitude,
+        });
+      } catch (error) {
+        console.error(
+          "Pin reverse geocode error:",
+          error
+        );
 
-updateMarkerLocation(
-  initialPosition
-);
+        setLocationCandidate(null);
 
-return () => {
-  mapListenersRef.current.forEach(
-    (listener) =>
-      listener.remove()
+        setLocationError(
+          "We found the location, but couldn't get its address. Please move the pin slightly and try again."
+        );
+      } finally {
+        setLocationLoading(false);
+      }
+    };
+
+  /*
+   * Drag pin
+   */
+  markerListenersRef.current.push(
+    marker.addListener(
+      "dragend",
+      () => {
+        const position =
+          marker.getPosition();
+
+        if (!position) return;
+
+        updateMarkerLocation(
+          position
+        );
+      }
+    )
   );
 
-  markerListenersRef.current.forEach(
-    (listener) =>
-      listener.remove()
+  /*
+   * Click anywhere on map
+   */
+  mapListenersRef.current.push(
+    map.addListener(
+      "click",
+      (
+        event: google.maps.MapMouseEvent
+      ) => {
+        if (!event.latLng) return;
+
+        const latitude =
+          event.latLng.lat();
+
+        const longitude =
+          event.latLng.lng();
+
+        /*
+         * Check service area before moving pin.
+         */
+        if (
+          !isInsideServiceArea(
+            latitude,
+            longitude
+          )
+        ) {
+          setLocationCandidate(null);
+
+          setLocationError(
+            "This location is outside Apna Shyampur's delivery area. Please select a point inside the green area."
+          );
+
+          return;
+        }
+
+        /*
+         * Move existing marker.
+         * Do NOT recreate map.
+         */
+        marker.setPosition(
+          event.latLng
+        );
+
+        updateMarkerLocation(
+          event.latLng
+        );
+      }
+    )
   );
 
-  mapListenersRef.current = [];
-  markerListenersRef.current = [];
+  /*
+   * Initial reverse geocode.
+   *
+   * This only creates the first candidate.
+   * It does NOT modify selectedMapLocation.
+   */
+  updateMarkerLocation(
+    initialPosition
+  );
 
-  marker.setMap(null);
+  /*
+   * Cleanup only when the modal/map
+   * is actually removed.
+   */
+  return () => {
+    mapListenersRef.current.forEach(
+      (listener) =>
+        listener.remove()
+    );
 
-  markerRef.current = null;
-  mapRef.current = null;
-};
+    markerListenersRef.current.forEach(
+      (listener) =>
+        listener.remove()
+    );
+
+    mapListenersRef.current = [];
+    markerListenersRef.current = [];
+
+    serviceCircle.setMap(null);
+    marker.setMap(null);
+
+    markerRef.current = null;
+    mapRef.current = null;
+  };
 
 }, [
-locationModal,
-locationMode,
-googleMapsLoaded,
-mapContainer,
-selectedMapLocation,
+  locationModal,
+  locationMode,
+  googleMapsLoaded,
+  mapContainer,
+  selectedMapLocation,
 ]);
 
 /*

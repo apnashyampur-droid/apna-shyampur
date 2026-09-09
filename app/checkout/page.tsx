@@ -334,14 +334,14 @@ const categoryCharge = useMemo(() => {
     string,
     number
   > = {
-    vegetables: 10,
-    grocery: 15,
-    dairy: 10,
-    bakery: 15,
+    vegetables: 5,
+    grocery: 8,
+    dairy: 8,
+    bakery: 10,
     food: 10,
     meat: 10,
-    medical: 15,
-    electronics: 20,
+    medical: 12,
+    electronics: 15,
   };
 
   return charges[category] ?? 0;

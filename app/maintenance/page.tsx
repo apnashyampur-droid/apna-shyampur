@@ -1,3 +1,15 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Apna Shyampur",
+  description:
+    "Apna Shyampur — your local shops in one place. Order from trusted local shops in Shyampur.",
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
+
 export default function MaintenancePage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f6f7f5] px-5 text-[#111]">

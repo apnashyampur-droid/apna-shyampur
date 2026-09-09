@@ -207,45 +207,179 @@ export default function ProfileScreen() {
     setEditValue("");
   };
 
-  const saveField = async (
-    field: "full_name" | "phone"
-  ) => {
-    if (!user || !profile) return;
+ const saveField = async (
+  field: "full_name" | "phone"
+) => {
+  if (!user || !profile) return;
 
-    const value = editValue.trim();
+  const value = editValue.trim();
 
-    if (!value) {
+  if (!value) {
+    return;
+  }
+
+  if (field === "phone") {
+    const phone = value.replace(/\D/g, "");
+
+    if (!/^[6-9]\d{9}$/.test(phone)) {
+      console.error("Invalid phone number:", phone);
       return;
     }
+  }
 
-    setSaving(true);
+  setSaving(true);
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        [field]: value,
-      })
-      .eq("id", user.id);
+  try {
 
-    if (error) {
-      console.error("Profile update error:", error);
+    const { data: existingProfile, error: profileCheckError } =
+      await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+    if (profileCheckError) {
+      console.error(
+        "Profile existence check failed:",
+        profileCheckError
+      );
+
       setSaving(false);
       return;
     }
 
-    setProfile((current) =>
-      current
-        ? {
-            ...current,
-            [field]: value,
-          }
-        : current
-    );
+    let savedData: any = null;
+
+    if (!existingProfile) {
+      const insertPayload: Record<string, any> = {
+        id: user.id,
+        [field]:
+          field === "phone"
+            ? value.replace(/\D/g, "")
+            : value,
+      };
+
+      if (profile.full_name?.trim()) {
+        insertPayload.full_name = profile.full_name.trim();
+      }
+
+      if (profile.avatar_url) {
+        insertPayload.avatar_url = profile.avatar_url;
+      }
+
+      if (profile.address?.trim()) {
+        insertPayload.address = profile.address.trim();
+      }
+
+      if (profile.latitude !== null) {
+        insertPayload.latitude = profile.latitude;
+      }
+
+      if (profile.longitude !== null) {
+        insertPayload.longitude = profile.longitude;
+      }
+
+      if (profile.location_updated_at) {
+        insertPayload.location_updated_at =
+          profile.location_updated_at;
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .insert(insertPayload)
+        .select(
+          "id, full_name, avatar_url, phone, address, latitude, longitude, location_updated_at"
+        )
+        .maybeSingle();
+
+      if (error) {
+        console.error("Profile insert error:", error);
+
+        setSaving(false);
+        return;
+      }
+
+      savedData = data;
+    } else {
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({
+          [field]:
+            field === "phone"
+              ? value.replace(/\D/g, "")
+              : value,
+        })
+        .eq("id", user.id)
+        .select(
+          "id, full_name, avatar_url, phone, address, latitude, longitude, location_updated_at"
+        )
+        .maybeSingle();
+
+      if (error) {
+        console.error("Profile update error:", error);
+
+        setSaving(false);
+        return;
+      }
+
+      if (!data) {
+        console.error(
+          "Profile update affected 0 rows. Check profiles RLS policies."
+        );
+
+        setSaving(false);
+        return;
+      }
+
+      savedData = data;
+    }
+
+    setProfile({
+      full_name:
+        savedData?.full_name ??
+        profile.full_name ??
+        "",
+
+      avatar_url:
+        savedData?.avatar_url ??
+        profile.avatar_url ??
+        null,
+
+      phone:
+        savedData?.phone ??
+        profile.phone ??
+        "",
+
+      address:
+        savedData?.address ??
+        profile.address ??
+        "",
+
+      latitude:
+        savedData?.latitude ??
+        profile.latitude ??
+        null,
+
+      longitude:
+        savedData?.longitude ??
+        profile.longitude ??
+        null,
+
+      location_updated_at:
+        savedData?.location_updated_at ??
+        profile.location_updated_at ??
+        null,
+    });
 
     setEditing(null);
     setEditValue("");
+  } catch (error) {
+    console.error("Unexpected profile save error:", error);
+  } finally {
     setSaving(false);
-  };
+  }
+};
 
   const openLocationPicker = () => {
     setLocationMode("current");
@@ -256,183 +390,368 @@ export default function ProfileScreen() {
   };
 
   const getCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setLocationLoading(false);
-      setLocationError(
-        "Your browser does not support location services."
-      );
-      return;
-    }
-
-    setLocationLoading(true);
-    setLocationError("");
-    setLocationCandidate(null);
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const latitude = position.coords.latitude;
-        const longitude = position.coords.longitude;
-
-        if (!isInsideServiceArea(latitude, longitude)) {
-          setLocationLoading(false);
-          setLocationError(
-            "Sorry, Apna Shyampur is not available at your current location yet."
-          );
-          return;
-        }
-
-        try {
-          const response = await fetch(
-            `/api/geocode?lat=${encodeURIComponent(
-              latitude
-            )}&lng=${encodeURIComponent(longitude)}`
-          );
-
-          const data = await response.json();
-
-          if (!response.ok || !data.address) {
-            console.error(
-              "Reverse geocoding failed:",
-              data
-            );
-
-            setLocationLoading(false);
-            setLocationError(
-              data?.error ||
-                "We found your location, but couldn't get its address. Please try again."
-            );
-            return;
-          }
-
-          setLocationCandidate({
-            address: data.address,
-            latitude,
-            longitude,
-          });
-
-          setLocationLoading(false);
-          setLocationError("");
-        } catch (error) {
-          console.error(
-            "Reverse geocoding request failed:",
-            error
-          );
-
-          setLocationLoading(false);
-          setLocationError(
-            "We found your location, but couldn't get its address. Please try again."
-          );
-        }
-      },
-
-      (error) => {
-        console.error("Geolocation error:", {
-          code: error.code,
-          message: error.message,
-        });
-
-        setLocationLoading(false);
-
-        if (error.code === 1) {
-          setLocationError(
-            "Location access was denied. Please allow location access for this site and try again."
-          );
-        } else if (error.code === 2) {
-          setLocationError(
-            "Your device could not determine your location. Please make sure Location is turned on and try again."
-          );
-        } else if (error.code === 3) {
-          setLocationError(
-            "We couldn't determine your location in time. Please try again."
-          );
-        } else {
-          setLocationError(
-            "We couldn't access your current location. Please try again."
-          );
-        }
-      },
-
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
-      }
+  if (!navigator.geolocation) {
+    setLocationLoading(false);
+    setLocationError(
+      "Your browser does not support location services."
     );
-  };
+    return;
+  }
 
-  const saveLocation = async () => {
-    if (
-      !user ||
-      !locationCandidate?.address.trim() ||
-      locationCandidate.latitude === null ||
-      locationCandidate.longitude === null
-    ) {
-      return;
-    }
+  setLocationLoading(true);
+  setLocationError("");
+  setLocationCandidate(null);
 
-    if (
-      !isInsideServiceArea(
-        locationCandidate.latitude,
-        locationCandidate.longitude
-      )
-    ) {
+  const handlePosition = async (
+    position: GeolocationPosition
+  ) => {
+    const latitude = position.coords.latitude;
+    const longitude = position.coords.longitude;
+
+    console.log("LOCATION DETECTED:", {
+      latitude,
+      longitude,
+      accuracyMeters: position.coords.accuracy,
+    });
+
+    if (!isInsideServiceArea(latitude, longitude)) {
+      setLocationLoading(false);
+
       setLocationError(
         "Sorry, Apna Shyampur is not available at your current location yet."
       );
+
       return;
     }
 
-    setLocationLoading(true);
+    let address = "Current location";
 
-    const updatedAt = new Date().toISOString();
+    try {
+      const controller = new AbortController();
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        address: locationCandidate.address.trim(),
-        latitude: locationCandidate.latitude,
-        longitude: locationCandidate.longitude,
-        location_updated_at: updatedAt,
-      })
-      .eq("id", user.id);
+      const timeoutId = window.setTimeout(() => {
+        controller.abort();
+      }, 10000);
 
-    if (error) {
-      console.error("Location save error:", error);
-
-      setLocationLoading(false);
-
-      setLocationError(
-        "We couldn't save your location. Please try again."
+      const response = await fetch(
+        `/api/geocode?lat=${encodeURIComponent(
+          latitude
+        )}&lng=${encodeURIComponent(longitude)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        }
       );
 
+      window.clearTimeout(timeoutId);
+
+      let data: any = null;
+
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      console.log("GEOCODING RESULT:", {
+        ok: response.ok,
+        status: response.status,
+        data,
+      });
+
+      if (response.ok && data?.address?.trim()) {
+        address = data.address.trim();
+      } else {
+        console.warn(
+          "Reverse geocoding failed. Using coordinate fallback."
+        );
+      }
+    } catch (error) {
+      console.warn(
+        "Reverse geocoding unavailable. Using coordinate fallback.",
+        error
+      );
+    }
+
+    /*
+     * IMPORTANT:
+     * Even if geocoding fails, we still have valid GPS coordinates.
+     */
+    setLocationCandidate({
+      address,
+      latitude,
+      longitude,
+    });
+
+    setLocationLoading(false);
+    setLocationError("");
+  };
+
+  const handleLocationError = (
+    error: GeolocationPositionError
+  ) => {
+    console.error("Geolocation error:", {
+      code: error.code,
+      message: error.message,
+    });
+
+    setLocationLoading(false);
+
+    if (error.code === 1) {
+      setLocationError(
+        "Location access was denied. Please allow location access for this site and try again."
+      );
+    } else if (error.code === 2) {
+      setLocationError(
+        "Your device could not determine your location. Please turn on Location/GPS and try again."
+      );
+    } else if (error.code === 3) {
+      setLocationError(
+        "Location detection took too long. Please try again."
+      );
+    } else {
+      setLocationError(
+        "We couldn't access your current location. Please try again."
+      );
+    }
+  };
+
+  navigator.geolocation.getCurrentPosition(
+    handlePosition,
+    () => {
+ 
+      console.warn(
+        "First location attempt failed. Retrying with high accuracy..."
+      );
+
+      navigator.geolocation.getCurrentPosition(
+        handlePosition,
+        handleLocationError,
+        {
+          enableHighAccuracy: true,
+          timeout: 30000,
+          maximumAge: 0,
+        }
+      );
+    },
+    {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 60000,
+    }
+  );
+};
+
+const saveLocation = async () => {
+  if (
+    !user ||
+    !locationCandidate ||
+    locationCandidate.latitude === null ||
+    locationCandidate.longitude === null
+  ) {
+    return;
+  }
+
+  const latitude = locationCandidate.latitude;
+  const longitude = locationCandidate.longitude;
+
+  if (!isInsideServiceArea(latitude, longitude)) {
+    setLocationError(
+      "Sorry, Apna Shyampur is not available at your current location yet."
+    );
+    return;
+  }
+
+  setLocationLoading(true);
+  setLocationError("");
+
+  try {
+    const updatedAt = new Date().toISOString();
+
+    /*
+     * Check whether profile row exists.
+     */
+    const { data: existingProfile, error: profileCheckError } =
+      await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+    if (profileCheckError) {
+      console.error(
+        "Profile existence check failed:",
+        profileCheckError
+      );
+
+      setLocationError(
+        "We couldn't verify your profile. Please try again."
+      );
+
+      setLocationLoading(false);
       return;
     }
 
-    setProfile((current) =>
-      current
-        ? {
-            ...current,
-            address: locationCandidate.address.trim(),
-            latitude: locationCandidate.latitude,
-            longitude: locationCandidate.longitude,
-            location_updated_at: updatedAt,
-          }
-        : current
-    );
+    const address =
+      locationCandidate.address?.trim() ||
+      "Current location";
+
+    let savedData: any = null;
+
+    /*
+     * Profile doesn't exist -> create it.
+     */
+    if (!existingProfile) {
+      const insertPayload: Record<string, any> = {
+        id: user.id,
+        address,
+        latitude,
+        longitude,
+        location_updated_at: updatedAt,
+      };
+
+      if (profile?.full_name?.trim()) {
+        insertPayload.full_name =
+          profile.full_name.trim();
+      }
+
+      if (profile?.avatar_url) {
+        insertPayload.avatar_url = profile.avatar_url;
+      }
+
+      if (profile?.phone?.trim()) {
+        insertPayload.phone =
+          profile.phone.trim();
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .insert(insertPayload)
+        .select(
+          "id, full_name, avatar_url, phone, address, latitude, longitude, location_updated_at"
+        )
+        .maybeSingle();
+
+      if (error) {
+        console.error("Location profile insert error:", error);
+
+        setLocationError(
+          "We couldn't save your location. Please try again."
+        );
+
+        setLocationLoading(false);
+        return;
+      }
+
+      savedData = data;
+    } else {
+      /*
+       * Profile exists -> update location.
+       */
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({
+          address,
+          latitude,
+          longitude,
+          location_updated_at: updatedAt,
+        })
+        .eq("id", user.id)
+        .select(
+          "id, full_name, avatar_url, phone, address, latitude, longitude, location_updated_at"
+        )
+        .maybeSingle();
+
+      if (error) {
+        console.error("Location save error:", error);
+
+        setLocationError(
+          "We couldn't save your location. Please try again."
+        );
+
+        setLocationLoading(false);
+        return;
+      }
+
+      if (!data) {
+        console.error(
+          "Location update affected 0 rows. Check profiles RLS policies."
+        );
+
+        setLocationError(
+          "Your location couldn't be saved. Please try again."
+        );
+
+        setLocationLoading(false);
+        return;
+      }
+
+      savedData = data;
+    }
+
+    /*
+     * Update UI ONLY after Supabase confirms save.
+     */
+    setProfile({
+      full_name:
+        savedData?.full_name ??
+        profile?.full_name ??
+        "",
+
+      avatar_url:
+        savedData?.avatar_url ??
+        profile?.avatar_url ??
+        null,
+
+      phone:
+        savedData?.phone ??
+        profile?.phone ??
+        "",
+
+      address:
+        savedData?.address ??
+        address,
+
+      latitude:
+        savedData?.latitude ??
+        latitude,
+
+      longitude:
+        savedData?.longitude ??
+        longitude,
+
+      location_updated_at:
+        savedData?.location_updated_at ??
+        updatedAt,
+    });
 
     setLocationLoading(false);
     setLocationModal(false);
     setLocationCandidate(null);
     setLocationMode(null);
     setLocationError("");
-  };
+  } catch (error) {
+    console.error(
+      "Unexpected location save error:",
+      error
+    );
 
-  const deleteLocation = async () => {
-    if (!user || !profile?.address) return;
+    setLocationLoading(false);
 
-    setDeletingLocation(true);
+    setLocationError(
+      "Something went wrong while saving your location. Please try again."
+    );
+  }
+};
 
-    const { error } = await supabase
+const deleteLocation = async () => {
+  if (!user || !profile?.address) return;
+
+  setDeletingLocation(true);
+
+  try {
+    const { data, error } = await supabase
       .from("profiles")
       .update({
         address: null,
@@ -440,11 +759,22 @@ export default function ProfileScreen() {
         longitude: null,
         location_updated_at: null,
       })
-      .eq("id", user.id);
+      .eq("id", user.id)
+      .select(
+        "id, address, latitude, longitude, location_updated_at"
+      )
+      .maybeSingle();
 
     if (error) {
       console.error("Location delete error:", error);
+      setDeletingLocation(false);
+      return;
+    }
 
+    if (!data) {
+      console.error(
+        "Location delete affected 0 rows."
+      );
       setDeletingLocation(false);
       return;
     }
@@ -463,24 +793,25 @@ export default function ProfileScreen() {
 
     setDeletingLocation(false);
     setDeleteLocationOpen(false);
-  };
+  } catch (error) {
+    console.error(
+      "Unexpected location delete error:",
+      error
+    );
 
-  const displayName =
-    profile?.full_name ||
-    user?.user_metadata?.full_name ||
-    user?.user_metadata?.name ||
-    "Your Name";
+    setDeletingLocation(false);
+  }
+};
 
-  const email = user?.email || "";
+const displayName =
+  profile?.full_name?.trim() ||
+  user?.user_metadata?.full_name ||
+  user?.user_metadata?.name ||
+  "User";
 
-  const hasCustomProfileName =
-    !!profile?.full_name?.trim();
-
-  const avatar = hasCustomProfileName
-    ? null
-    : user?.user_metadata?.avatar_url ||
-      user?.user_metadata?.picture ||
-      null;
+const email =
+  user?.email ||
+  "";
 
   const initials = (profile?.full_name || "U")
     .trim()
@@ -584,15 +915,15 @@ export default function ProfileScreen() {
 
           <div className="mx-auto flex h-[86px] w-[86px] items-center justify-center overflow-hidden rounded-full border-[4px] border-white bg-[#111] text-[24px] font-black text-white shadow-[0_12px_35px_rgba(0,0,0,.10)]">
 
-            {avatar ? (
-              <img
-                src={avatar}
-                alt={displayName}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              initials
-            )}
+            {profile?.avatar_url ? (
+  <img
+    src={profile.avatar_url}
+    alt={profile.full_name || "Profile"}
+    className="h-full w-full object-cover"
+  />
+) : (
+  initials
+)}
 
           </div>
 

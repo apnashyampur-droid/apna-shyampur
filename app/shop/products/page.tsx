@@ -14,7 +14,10 @@ const CATEGORIES = [
   "Medical",
   "Bakery",
   "Dairy",
-  "Other",
+  "Gifts & Toys",
+  "Clothes",
+  "Footwear",
+  "Cosmetics",
 ];
 
 type Product = {

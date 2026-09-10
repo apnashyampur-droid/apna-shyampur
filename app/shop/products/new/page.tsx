@@ -22,7 +22,10 @@ const CATEGORIES = [
   "Medical",
   "Bakery",
   "Dairy",
-  "Other",
+  "Gifts & Toys",
+  "Clothes",
+  "Footwear",
+  "Cosmetics",
 ];
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;

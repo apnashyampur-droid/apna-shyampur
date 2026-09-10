@@ -707,20 +707,29 @@ useEffect(() => {
   <div className="mx-auto max-w-[1400px] px-5 py-2.5 sm:px-8 sm:py-3 lg:px-10">
 
     <form
-      onSubmit={(e) => {
-        e.preventDefault();
 
-        const query = searchQuery.trim();
+onSubmit={(e) => {
+  e.preventDefault();
 
-        if (!query) {
-          router.push("/all-shops");
-          return;
-        }
+  if (authLoading) return;
 
-        router.push(
-          `/all-shops?search=${encodeURIComponent(query)}`
-        );
-      }}
+  if (!user) {
+    setShowSignIn(true);
+    return;
+  }
+
+  const query = searchQuery.trim();
+
+  if (!query) {
+    router.push("/all-shops");
+    return;
+  }
+
+  router.push(
+    `/all-shops?search=${encodeURIComponent(query)}`
+  );
+}}
+      
     className="relative mx-auto flex w-full max-w-[900px] items-center gap-1.5 rounded-[15px] bg-white p-1.5 shadow-[0_8px_30px_rgba(0,0,0,.06)]"
     >
 
@@ -1024,9 +1033,18 @@ useEffect(() => {
   {categories.map((category) => (
     <button
   key={category.name}
-  onClick={() =>
-  router.push(`/all-shops?category=${encodeURIComponent(category.name)}`)
-}
+  onClick={() => {
+  if (authLoading) return;
+
+  if (!user) {
+    setShowSignIn(true);
+    return;
+  }
+
+  router.push(
+    `/all-shops?category=${encodeURIComponent(category.name)}`
+  );
+}}
   className="group flex min-h-[185px] flex-col rounded-[22px] border border-black/[0.07] bg-white p-4 text-left transition duration-300 hover:-translate-y-1 hover:border-[#159447]/30 hover:shadow-[0_18px_50px_rgba(0,0,0,.07)] active:scale-[0.98]"
 >
 
@@ -1097,8 +1115,17 @@ useEffect(() => {
     </p>
   </div>
 
-  <button
-    onClick={() => router.push("/all-shops")}
+ <button
+  onClick={() => {
+    if (authLoading) return;
+
+    if (!user) {
+      setShowSignIn(true);
+      return;
+    }
+
+    router.push("/all-shops");
+  }}
     className="group self-start inline-flex shrink-0 items-center gap-2 rounded-full bg-[#111] px-4 py-2.5 text-[11px] font-bold text-white transition hover:bg-[#222] sm:self-end"
   >
     <span>Explore all shops</span>

@@ -1155,9 +1155,18 @@ useEffect(() => {
   ) : (
     shops.map((shop) => (
       <article
-        key={shop.id}
-        className="group overflow-hidden rounded-[24px] border border-black/[0.07] bg-[#f7f8f6] transition duration-300 hover:-translate-y-1 hover:shadow-[0_25px_60px_rgba(0,0,0,.08)]"
-      >
+  key={shop.id}
+  onClick={() => requireSignIn(shop.slug || shop.id)}
+  role="button"
+  tabIndex={0}
+  onKeyDown={(e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      requireSignIn(shop.slug || shop.id);
+    }
+  }}
+  className="group cursor-pointer overflow-hidden rounded-[24px] border border-black/[0.07] bg-[#f7f8f6] transition duration-300 hover:-translate-y-1 hover:shadow-[0_25px_60px_rgba(0,0,0,.08)]"
+>
 
           <div className="relative h-[235px] overflow-hidden">
 

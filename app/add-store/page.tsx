@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Cropper from "react-easy-crop";
 import { createClient } from "@/lib/supabase/client";
 
@@ -16,7 +16,131 @@ const categories = [
   "Other",
 ];
 
+const SERVICE_CENTER = {
+  lat: 30.0614,
+  lng: 78.2234,
+};
+
+const SERVICE_RADIUS_KM = 2.5;
+
 export default function AddStore() {
+
+  const loadGoogleMaps = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (window.google?.maps) {
+    setGoogleMapsLoaded(true);
+    return;
+  }
+
+  const existingScript =
+    document.getElementById(
+      "google-maps-script"
+    ) as HTMLScriptElement | null;
+
+  if (existingScript) {
+    if (window.google?.maps) {
+      setGoogleMapsLoaded(true);
+      return;
+    }
+
+    existingScript.addEventListener(
+      "load",
+      () => {
+        setGoogleMapsLoaded(
+          !!window.google?.maps
+        );
+      },
+      { once: true }
+    );
+
+    return;
+  }
+
+  const apiKey =
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+  if (!apiKey) {
+    setLocationLoading(false);
+
+    setErrors((prev) => ({
+      ...prev,
+      address:
+        "Google Maps is not configured. Please try again later.",
+    }));
+
+    return;
+  }
+
+  const script =
+    document.createElement("script");
+
+  script.id = "google-maps-script";
+
+  script.src =
+    `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
+      apiKey
+    )}&libraries=geometry`;
+
+  script.async = true;
+  script.defer = true;
+
+  script.onload = () => {
+    if (window.google?.maps) {
+      setGoogleMapsLoaded(true);
+    } else {
+      setLocationLoading(false);
+
+      setErrors((prev) => ({
+        ...prev,
+        address:
+          "Google Maps could not be initialized. Please try again.",
+      }));
+    }
+  };
+
+  script.onerror = () => {
+    setLocationLoading(false);
+
+    setErrors((prev) => ({
+      ...prev,
+      address:
+        "We couldn't load Google Maps. Please try again.",
+    }));
+  };
+
+  document.head.appendChild(script);
+};
+
+const reverseGeocodeLocation = async (
+  latitude: number,
+  longitude: number
+) => {
+  const response = await fetch(
+    `/api/geocode?lat=${encodeURIComponent(
+      latitude
+    )}&lng=${encodeURIComponent(
+      longitude
+    )}`,
+    {
+      cache: "no-store",
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || !data.address) {
+    throw new Error(
+      data?.error ||
+        "Reverse geocoding failed"
+    );
+  }
+
+  return data.address as string;
+};
+
   const router = useRouter();
 
   const [storeName, setStoreName] = useState("");
@@ -24,9 +148,34 @@ export default function AddStore() {
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
-  const [shopLatitude, setShopLatitude] = useState<number | null>(null);
+ const [shopLatitude, setShopLatitude] = useState<number | null>(null);
 const [shopLongitude, setShopLongitude] = useState<number | null>(null);
+
 const [locationLoading, setLocationLoading] = useState(false);
+const [locationModal, setLocationModal] = useState(false);
+const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
+const [mapContainer, setMapContainer] =
+  useState<HTMLDivElement | null>(null);
+
+const [selectedMapLocation, setSelectedMapLocation] = useState<{
+  latitude: number;
+  longitude: number;
+} | null>(null);
+
+const [locationCandidate, setLocationCandidate] = useState<{
+  address: string;
+  latitude: number;
+  longitude: number;
+} | null>(null);
+
+const mapRef = useRef<google.maps.Map | null>(null);
+const markerRef = useRef<google.maps.Marker | null>(null);
+
+const mapListenersRef =
+  useRef<google.maps.MapsEventListener[]>([]);
+
+const markerListenersRef =
+  useRef<google.maps.MapsEventListener[]>([]);
   const [description, setDescription] = useState("");
   const [storeImage, setStoreImage] = useState<File | null>(null);
 const [storeImagePreview, setStoreImagePreview] = useState("");
@@ -52,6 +201,40 @@ const [storeStatus, setStoreStatus] = useState<
   address?: string;
   storeImage?: string;
 }>({});
+
+const isInsideServiceArea = (
+  latitude: number,
+  longitude: number
+) => {
+  const toRadians = (value: number) =>
+    (value * Math.PI) / 180;
+
+  const earthRadiusKm = 6371;
+
+  const dLat = toRadians(
+    latitude - SERVICE_CENTER.lat
+  );
+
+  const dLng = toRadians(
+    longitude - SERVICE_CENTER.lng
+  );
+
+  const lat1 = toRadians(SERVICE_CENTER.lat);
+  const lat2 = toRadians(latitude);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLng / 2) ** 2 *
+      Math.cos(lat1) *
+      Math.cos(lat2);
+
+  const distance =
+    2 *
+    earthRadiusKm *
+    Math.asin(Math.sqrt(a));
+
+  return distance <= SERVICE_RADIUS_KM;
+};
 
 const createCroppedImage = async (
   imageSrc: string,
@@ -161,11 +344,16 @@ const handleApplyCrop = async () => {
 };
 
 const handleUseCurrentLocation = () => {
-  if (!navigator.geolocation) {
+  if (
+    typeof navigator === "undefined" ||
+    !navigator.geolocation
+  ) {
     setErrors((prev) => ({
       ...prev,
-      address: "Your browser does not support location services.",
+      address:
+        "Your browser does not support location services.",
     }));
+
     return;
   }
 
@@ -178,59 +366,68 @@ const handleUseCurrentLocation = () => {
 
   navigator.geolocation.getCurrentPosition(
     async (position) => {
-      const latitude = position.coords.latitude;
-      const longitude = position.coords.longitude;
+      const latitude =
+        position.coords.latitude;
 
-      try {
-        const response = await fetch(
-          `/api/geocode?lat=${encodeURIComponent(
-            latitude
-          )}&lng=${encodeURIComponent(longitude)}`
-        );
+      const longitude =
+        position.coords.longitude;
 
-        const data = await response.json();
+      const accuracy =
+        position.coords.accuracy;
 
-        if (!response.ok || !data.address) {
-          console.error("Shop reverse geocoding failed:", data);
-
-          setErrors((prev) => ({
-            ...prev,
-            address:
-              data?.error ||
-              "We found your location, but couldn't get the shop address. Please try again.",
-          }));
-
-          return;
+      console.log(
+        "SHOP GPS LOCATION:",
+        {
+          latitude,
+          longitude,
+          accuracyMeters:
+            Number(
+              accuracy.toFixed(1)
+            ),
         }
+      );
 
-        setShopLatitude(latitude);
-        setShopLongitude(longitude);
-        setAddress(data.address);
-
-        setErrors((prev) => ({
-          ...prev,
-          address: undefined,
-        }));
-      } catch (error) {
-        console.error(
-          "Shop reverse geocoding request failed:",
-          error
-        );
+      if (
+        !isInsideServiceArea(
+          latitude,
+          longitude
+        )
+      ) {
+        setLocationLoading(false);
 
         setErrors((prev) => ({
           ...prev,
           address:
-            "We found your location, but couldn't get the shop address. Please try again.",
+            "Sorry, your shop is outside Apna Shyampur's delivery area yet.",
         }));
-      } finally {
-        setLocationLoading(false);
+
+        return;
       }
+
+      setShopLatitude(latitude);
+      setShopLongitude(longitude);
+
+      setSelectedMapLocation({
+        latitude,
+        longitude,
+      });
+
+      setLocationCandidate(null);
+
+      setLocationModal(true);
+
+      setLocationLoading(false);
+
+      loadGoogleMaps();
     },
     (error) => {
-      console.error("Shop geolocation error:", {
-        code: error.code,
-        message: error.message,
-      });
+      console.error(
+        "Shop geolocation error:",
+        {
+          code: error.code,
+          message: error.message,
+        }
+      );
 
       setLocationLoading(false);
 
@@ -262,11 +459,272 @@ const handleUseCurrentLocation = () => {
     },
     {
       enableHighAccuracy: true,
-      timeout: 15000,
+      timeout: 20000,
       maximumAge: 0,
     }
   );
 };
+
+useEffect(() => {
+  if (
+    !locationModal ||
+    !googleMapsLoaded ||
+    !mapContainer ||
+    !selectedMapLocation ||
+    !window.google?.maps
+  ) {
+    return;
+  }
+
+  /*
+   * IMPORTANT:
+   * Never recreate the map when candidate location changes.
+   */
+  if (mapRef.current) {
+    return;
+  }
+
+  const initialPosition =
+    new google.maps.LatLng(
+      selectedMapLocation.latitude,
+      selectedMapLocation.longitude
+    );
+
+  const map =
+    new google.maps.Map(
+      mapContainer,
+      {
+        center: initialPosition,
+        zoom: 18,
+
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+        zoomControl: true,
+
+        gestureHandling: "greedy",
+        clickableIcons: false,
+
+        mapTypeId:
+          google.maps.MapTypeId.ROADMAP,
+      }
+    );
+
+  mapRef.current = map;
+
+  /*
+   * Service area
+   */
+  const serviceCircle =
+    new google.maps.Circle({
+      map,
+      center: {
+        lat: SERVICE_CENTER.lat,
+        lng: SERVICE_CENTER.lng,
+      },
+      radius:
+        SERVICE_RADIUS_KM * 1000,
+
+      strokeColor: "#159447",
+      strokeOpacity: 0.8,
+      strokeWeight: 1.5,
+
+      fillColor: "#159447",
+      fillOpacity: 0.06,
+
+      clickable: false,
+    });
+
+  /*
+   * Shop pin
+   */
+  const marker =
+    new google.maps.Marker({
+      map,
+      position: initialPosition,
+      draggable: true,
+      title: "Set exact shop location",
+    });
+
+  markerRef.current = marker;
+
+  /*
+   * Update selected shop location
+   * + reverse geocode address.
+   */
+  const updateMarkerLocation =
+    async (
+      position: google.maps.LatLng
+    ) => {
+      const latitude =
+        position.lat();
+
+      const longitude =
+        position.lng();
+
+      console.log(
+        "SHOP PIN LOCATION:",
+        {
+          latitude,
+          longitude,
+        }
+      );
+
+      if (
+        !isInsideServiceArea(
+          latitude,
+          longitude
+        )
+      ) {
+        setLocationCandidate(null);
+
+        setErrors((prev) => ({
+          ...prev,
+          address:
+            "This location is outside Apna Shyampur's delivery area. Please place your shop pin inside the green area.",
+        }));
+
+        return;
+      }
+
+      setErrors((prev) => ({
+        ...prev,
+        address: undefined,
+      }));
+
+      setLocationLoading(true);
+
+      try {
+        const address =
+          await reverseGeocodeLocation(
+            latitude,
+            longitude
+          );
+
+        setLocationCandidate({
+          address,
+          latitude,
+          longitude,
+        });
+      } catch (error) {
+        console.error(
+          "Shop pin reverse geocode error:",
+          error
+        );
+
+        setLocationCandidate(null);
+
+        setErrors((prev) => ({
+          ...prev,
+          address:
+            "We found your shop location, but couldn't get its address. Please move the pin slightly and try again.",
+        }));
+      } finally {
+        setLocationLoading(false);
+      }
+    };
+
+  /*
+   * Drag pin
+   */
+  markerListenersRef.current.push(
+    marker.addListener(
+      "dragend",
+      () => {
+        const position =
+          marker.getPosition();
+
+        if (!position) return;
+
+        updateMarkerLocation(
+          position
+        );
+      }
+    )
+  );
+
+  /*
+   * Click anywhere on map
+   */
+  mapListenersRef.current.push(
+    map.addListener(
+      "click",
+      (
+        event: google.maps.MapMouseEvent
+      ) => {
+        if (!event.latLng) return;
+
+        const latitude =
+          event.latLng.lat();
+
+        const longitude =
+          event.latLng.lng();
+
+        if (
+          !isInsideServiceArea(
+            latitude,
+            longitude
+          )
+        ) {
+          setLocationCandidate(null);
+
+          setErrors((prev) => ({
+            ...prev,
+            address:
+              "This location is outside Apna Shyampur's delivery area. Please select a point inside the green area.",
+          }));
+
+          return;
+        }
+
+        marker.setPosition(
+          event.latLng
+        );
+
+        updateMarkerLocation(
+          event.latLng
+        );
+      }
+    )
+  );
+
+  /*
+   * Initial reverse geocoding
+   */
+  updateMarkerLocation(
+    initialPosition
+  );
+
+  /*
+   * Cleanup only when the map
+   * is actually removed.
+   */
+  return () => {
+    mapListenersRef.current.forEach(
+      (listener) =>
+        listener.remove()
+    );
+
+    markerListenersRef.current.forEach(
+      (listener) =>
+        listener.remove()
+    );
+
+    mapListenersRef.current = [];
+    markerListenersRef.current = [];
+
+    serviceCircle.setMap(null);
+    marker.setMap(null);
+
+    markerRef.current = null;
+    mapRef.current = null;
+  };
+}, [
+  locationModal,
+  googleMapsLoaded,
+  mapContainer,
+  selectedMapLocation,
+]);
 
   const validateForm = () => {
     const newErrors: typeof errors = {};
@@ -291,9 +749,9 @@ const handleUseCurrentLocation = () => {
     if (!trimmedDescription) {
       newErrors.description = "Short description is required";
     } else if (trimmedDescription.length > 160) {
-      newErrors.description =
-        "Short description can be up to  characters";
-    }
+  newErrors.description =
+    "Short description can be up to 160 characters";
+}
 
     if (!ownerName.trim()) {
       newErrors.ownerName = "Owner name is required";
@@ -996,46 +1454,75 @@ if (existingStore) {
       </div>
     </div>
 
-    {address ? (
-      <div className="mt-4 rounded-[13px] border border-[#159447]/15 bg-white px-4 py-3">
-        <div className="flex items-start gap-2.5">
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="mt-0.5 shrink-0 text-[#159447]"
-          >
-            <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
-            <circle cx="12" cy="10" r="2.5" />
-          </svg>
+   {locationCandidate ? (
+  <div className="mt-4 rounded-[13px] border border-[#159447]/15 bg-white px-4 py-3">
+    <div className="flex items-start gap-2.5">
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="mt-0.5 shrink-0 text-[#159447]"
+      >
+        <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+        <circle cx="12" cy="10" r="2.5" />
+      </svg>
 
-          <div className="min-w-0">
-            <div className="text-[9px] font-black text-[#159447]">
-              Shop location set
-            </div>
-
-            <p className="mt-1 text-[10px] leading-4 text-black/55">
-              {address}
-            </p>
-          </div>
-        </div>
-      </div>
-    ) : (
-      <div className="mt-4 rounded-[13px] border border-dashed border-black/[0.10] bg-white px-4 py-4 text-center">
-        <div className="text-[10px] font-bold text-black/40">
-          Shop location not set
+      <div className="min-w-0">
+        <div className="text-[9px] font-black text-[#159447]">
+          Exact shop location selected
         </div>
 
-        <p className="mt-1 text-[8px] text-black/30">
-          Stand at your shop and use your current location.
+        <p className="mt-1 text-[10px] leading-4 text-black/55">
+          {locationCandidate.address}
         </p>
       </div>
-    )}
+    </div>
+  </div>
+) : address ? (
+  <div className="mt-4 rounded-[13px] border border-[#159447]/15 bg-white px-4 py-3">
+    <div className="flex items-start gap-2.5">
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="mt-0.5 shrink-0 text-[#159447]"
+      >
+        <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+        <circle cx="12" cy="10" r="2.5" />
+      </svg>
+
+      <div className="min-w-0">
+        <div className="text-[9px] font-black text-[#159447]">
+          Shop location set
+        </div>
+
+        <p className="mt-1 text-[10px] leading-4 text-black/55">
+          {address}
+        </p>
+      </div>
+    </div>
+  </div>
+) : (
+  <div className="mt-4 rounded-[13px] border border-dashed border-black/[0.10] bg-white px-4 py-4 text-center">
+    <div className="text-[10px] font-bold text-black/40">
+      Shop location not set
+    </div>
+
+    <p className="mt-1 text-[8px] text-black/30">
+      Stand at your shop and set the pin on its exact location.
+    </p>
+  </div>
+)}
 
     <button
       type="button"
@@ -1091,10 +1578,17 @@ if (existingStore) {
             <circle cx="12" cy="12" r="3" />
           </svg>
 
-          {address ? "Update current location" : "Use current location"}
+         {address
+  ? "Update shop location"
+  : "Set shop location"}
         </>
       )}
     </button>
+
+    <p className="mt-1 text-[8px] text-black/30">
+  Stand at your shop, set the pin exactly where your shop is,
+  then confirm the location.
+</p>
 
     {errors.address && (
       <p className="mt-2 text-[9px] font-semibold text-red-500">
@@ -1257,10 +1751,11 @@ if (existingStore) {
           if (!file) return;
 
           if (file.size > 10 * 1024 * 1024) {
+          
             setErrors((prev) => ({
-              ...prev,
-              shopImage: "Image must be smaller than 10 MB",
-            }));
+  ...prev,
+  storeImage: "Image must be smaller than 10 MB",
+}));
 
             e.target.value = "";
             return;
@@ -1275,9 +1770,9 @@ if (existingStore) {
           setCropModalOpen(true);
 
           setErrors((prev) => ({
-            ...prev,
-            shopImage: undefined,
-          }));
+  ...prev,
+  storeImage: undefined,
+}));
 
           e.target.value = "";
         }}
@@ -1519,6 +2014,231 @@ if (existingStore) {
 
           Your information is handled securely.
         </div>
+
+        {locationModal && (
+  <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+    <div className="w-full max-w-[620px] overflow-hidden rounded-[26px] bg-white shadow-2xl">
+
+      {/* HEADER */}
+
+      <div className="flex items-start justify-between gap-4 border-b border-black/[0.07] px-5 py-4">
+        <div>
+          <div className="text-[9px] font-black tracking-[0.16em] text-[#159447]">
+            SHOP LOCATION
+          </div>
+
+          <h3 className="mt-1 text-[18px] font-black tracking-[-0.04em]">
+            Set your exact shop location
+          </h3>
+
+          <p className="mt-1 text-[9px] leading-4 text-black/40">
+            Drag the pin or tap anywhere on the map to place it exactly where
+            your shop is located.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setLocationModal(false);
+            setLocationCandidate(null);
+            setLocationLoading(false);
+          }}
+          disabled={locationLoading}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.05] text-black/55 transition hover:bg-black/[0.08] hover:text-black disabled:opacity-50"
+          aria-label="Close location picker"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <path d="M6 6l12 12" />
+            <path d="M18 6 6 18" />
+          </svg>
+        </button>
+      </div>
+
+      {/* MAP */}
+
+      <div className="px-5 pt-5">
+        <div className="relative overflow-hidden rounded-[18px] border border-black/[0.08] bg-[#f3f4f2]">
+
+          {!googleMapsLoaded ? (
+            <div className="flex aspect-[16/10] items-center justify-center">
+              <div className="flex flex-col items-center">
+                <svg
+                  className="h-5 w-5 animate-spin text-[#159447]"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="9"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    opacity=".2"
+                  />
+
+                  <path
+                    d="M21 12a9 9 0 0 0-9-9"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+
+                <span className="mt-2 text-[9px] font-bold text-black/40">
+                  Loading map...
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div
+              ref={setMapContainer}
+              className="h-[360px] w-full sm:h-[400px]"
+            />
+          )}
+
+          {/* MAP HELP */}
+
+          <div className="pointer-events-none absolute bottom-3 left-3 right-3">
+            <div className="mx-auto max-w-[420px] rounded-[13px] border border-white/60 bg-white/90 px-3 py-2.5 text-center shadow-lg backdrop-blur-md">
+              <div className="text-[9px] font-black text-black/70">
+                Drag the pin to your shop
+              </div>
+
+              <div className="mt-0.5 text-[8px] text-black/40">
+                Green area = Apna Shyampur delivery area
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SELECTED ADDRESS */}
+
+      <div className="px-5 pt-4">
+        {locationCandidate ? (
+          <div className="rounded-[15px] border border-[#159447]/15 bg-[#f1f7f1] px-4 py-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#159447]">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+                  <circle cx="12" cy="10" r="2.5" />
+                </svg>
+              </div>
+
+              <div className="min-w-0">
+                <div className="text-[9px] font-black text-[#159447]">
+                  Location ready
+                </div>
+
+                <p className="mt-1 text-[9px] leading-4 text-black/50">
+                  {locationCandidate.address}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : locationLoading ? (
+          <div className="rounded-[15px] border border-black/[0.07] bg-[#fafbf9] px-4 py-3 text-center">
+            <div className="text-[9px] font-bold text-black/40">
+              Finding shop address...
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-[15px] border border-black/[0.07] bg-[#fafbf9] px-4 py-3 text-center">
+            <div className="text-[9px] font-bold text-black/40">
+              Move the pin to your exact shop location
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ERROR */}
+
+      {errors.address && (
+        <div className="px-5 pt-3">
+          <div className="rounded-[13px] border border-red-200 bg-red-50 px-3 py-2.5 text-center">
+            <p className="text-[9px] font-semibold leading-4 text-red-500">
+              {errors.address}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ACTIONS */}
+
+      <div className="flex gap-3 px-5 py-5">
+
+        <button
+          type="button"
+          onClick={() => {
+            setLocationModal(false);
+            setLocationCandidate(null);
+            setLocationLoading(false);
+          }}
+          disabled={locationLoading}
+          className="h-12 flex-1 rounded-[13px] border border-black/[0.08] bg-white text-[10px] font-black text-black/60 transition hover:bg-black/[0.03] disabled:opacity-50"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          disabled={
+            locationLoading ||
+            !locationCandidate
+          }
+          onClick={() => {
+            if (!locationCandidate) return;
+
+            setShopLatitude(
+              locationCandidate.latitude
+            );
+
+            setShopLongitude(
+              locationCandidate.longitude
+            );
+
+            setAddress(
+              locationCandidate.address
+            );
+
+            setLocationModal(false);
+            setLocationCandidate(null);
+            setLocationLoading(false);
+
+            setErrors((prev) => ({
+              ...prev,
+              address: undefined,
+            }));
+          }}
+          className="h-12 flex-[1.5] rounded-[13px] bg-[#111] text-[10px] font-black text-white transition hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {locationLoading
+            ? "Finding address..."
+            : "Confirm shop location"}
+        </button>
+
+      </div>
+    </div>
+  </div>
+)}
 
      {storeStatus && (
   <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-5 backdrop-blur-sm">

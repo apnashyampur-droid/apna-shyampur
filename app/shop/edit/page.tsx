@@ -4,10 +4,12 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
   type ReactNode,
 } from "react";
+
 import Cropper, { Area } from "react-easy-crop";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -31,6 +33,8 @@ type ShopForm = {
   ownerName: string;
   phone: string;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
   openingTime: string;
   closingTime: string;
 };
@@ -44,6 +48,8 @@ type ShopRecord = {
   owner_name: string | null;
   phone: string | null;
   address: string | null;
+  latitude: number | null;
+  longitude: number | null;
   opening_time: string | null;
   closing_time: string | null;
   store_image_url: string | null;
@@ -56,6 +62,8 @@ type ChangeRequestPayload = {
   owner_name?: string;
   phone?: string;
   address?: string;
+  latitude?: number;
+  longitude?: number;
   opening_time?: string;
   closing_time?: string;
   store_image_url?: string | null;
@@ -67,6 +75,11 @@ type ChangeRequestStatus =
   | "rejected"
   | null;
 
+type LocationPoint = {
+  latitude: number;
+  longitude: number;
+};
+
 const initialForm: ShopForm = {
   storeName: "",
   description: "",
@@ -74,6 +87,8 @@ const initialForm: ShopForm = {
   ownerName: "",
   phone: "",
   address: "",
+  latitude: null,
+  longitude: null,
   openingTime: "",
   closingTime: "",
 };
@@ -84,7 +99,79 @@ const inputClass =
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 const CROPPED_IMAGE_SIZE = 10 * 1024 * 1024;
 
-const createImage = (url: string): Promise<HTMLImageElement> =>
+/* -------------------------------------------------------------------------- */
+/* LOCATION SYSTEM                                                             */
+/* -------------------------------------------------------------------------- */
+
+const SERVICE_CENTER = {
+  lat: 30.0614,
+  lng: 78.2234,
+};
+
+const SERVICE_RADIUS_KM = 2.5;
+
+const isInsideServiceArea = (
+  latitude: number,
+  longitude: number
+) => {
+  const toRadians = (value: number) =>
+    (value * Math.PI) / 180;
+
+  const earthRadiusKm = 6371;
+
+  const dLat = toRadians(
+    latitude - SERVICE_CENTER.lat
+  );
+
+  const dLng = toRadians(
+    longitude - SERVICE_CENTER.lng
+  );
+
+  const lat1 = toRadians(SERVICE_CENTER.lat);
+  const lat2 = toRadians(latitude);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLng / 2) ** 2 *
+      Math.cos(lat1) *
+      Math.cos(lat2);
+
+  const distance =
+    2 *
+    earthRadiusKm *
+    Math.asin(Math.sqrt(a));
+
+  return distance <= SERVICE_RADIUS_KM;
+};
+
+const reverseGeocodeLocation = async (
+  latitude: number,
+  longitude: number
+) => {
+  const response = await fetch(
+    `/api/geocode?lat=${encodeURIComponent(
+      latitude
+    )}&lng=${encodeURIComponent(longitude)}`,
+    {
+      cache: "no-store",
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || !data.address) {
+    throw new Error(
+      data?.error ||
+        "Reverse geocoding failed"
+    );
+  }
+
+  return data.address as string;
+};
+
+const createImage = (
+  url: string
+): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
     const image = new Image();
 
@@ -104,7 +191,9 @@ const getCroppedImg = async (
   const ctx = canvas.getContext("2d");
 
   if (!ctx) {
-    throw new Error("Unable to prepare the cropped image.");
+    throw new Error(
+      "Unable to prepare the cropped image."
+    );
   }
 
   canvas.width = pixelCrop.width;
@@ -122,21 +211,33 @@ const getCroppedImg = async (
     pixelCrop.height
   );
 
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", 0.92)
+  const blob = await new Promise<Blob | null>(
+    (resolve) =>
+      canvas.toBlob(
+        resolve,
+        "image/jpeg",
+        0.92
+      )
   );
 
   if (!blob) {
-    throw new Error("Unable to create the cropped image.");
+    throw new Error(
+      "Unable to create the cropped image."
+    );
   }
 
   if (blob.size > CROPPED_IMAGE_SIZE) {
-    throw new Error("Cropped shop image must be 10 MB or smaller.");
+    throw new Error(
+      "Cropped shop image must be 10 MB or smaller."
+    );
   }
 
   return new File(
     [blob],
-    `${fileName.replace(/\.[^/.]+$/, "") || "shop-image"}-cropped.jpg`,
+    `${
+      fileName.replace(/\.[^/.]+$/, "") ||
+      "shop-image"
+    }-cropped.jpg`,
     {
       type: "image/jpeg",
       lastModified: Date.now(),
@@ -146,21 +247,31 @@ const getCroppedImg = async (
 
 export default function EditShopPage() {
   const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
+  const supabase = useMemo(
+    () => createClient(),
+    []
+  );
 
-  const [form, setForm] = useState<ShopForm>(initialForm);
+  const [form, setForm] =
+    useState<ShopForm>(initialForm);
+
   const [originalForm, setOriginalForm] =
     useState<ShopForm>(initialForm);
 
-  const [shop, setShop] = useState<ShopRecord | null>(null);
+  const [shop, setShop] =
+    useState<ShopRecord | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] =
+    useState("");
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [successMessage, setSuccessMessage] =
+    useState("");
+
+  const [confirmOpen, setConfirmOpen] =
+    useState(false);
 
   const [currentImageUrl, setCurrentImageUrl] =
     useState<string | null>(null);
@@ -171,7 +282,9 @@ export default function EditShopPage() {
   const [newImagePreview, setNewImagePreview] =
     useState<string | null>(null);
 
-  const [cropOpen, setCropOpen] = useState(false);
+  const [cropOpen, setCropOpen] =
+    useState(false);
+
   const [cropImage, setCropImage] =
     useState<string | null>(null);
 
@@ -185,33 +298,157 @@ export default function EditShopPage() {
 
   const [zoom, setZoom] = useState(1);
 
-  const [croppedAreaPixels, setCroppedAreaPixels] =
-    useState<Area | null>(null);
+  const [
+    croppedAreaPixels,
+    setCroppedAreaPixels,
+  ] = useState<Area | null>(null);
 
-  const [cropSaving, setCropSaving] = useState(false);
+  const [cropSaving, setCropSaving] =
+    useState(false);
 
   const [imageUploading, setImageUploading] =
     useState(false);
 
-  /*
-   * =========================================================
-   * NEW:
-   * CURRENT CHANGE REQUEST STATUS
-   * =========================================================
-   *
-   * pending  -> edit screen locked
-   * approved -> normal edit screen
-   * rejected -> normal edit screen
-   */
+  /* ------------------------------------------------------------------------ */
+  /* LOCATION STATE                                                            */
+  /* ------------------------------------------------------------------------ */
 
-  const [changeRequestStatus, setChangeRequestStatus] =
+  const [locationModal, setLocationModal] =
+    useState(false);
+
+  const [locationLoading, setLocationLoading] =
+    useState(false);
+
+  const [googleMapsLoaded, setGoogleMapsLoaded] =
+    useState(false);
+
+  const [mapContainer, setMapContainer] =
+    useState<HTMLDivElement | null>(null);
+
+  const [
+    selectedMapLocation,
+    setSelectedMapLocation,
+  ] = useState<LocationPoint | null>(null);
+
+  const [
+    locationCandidate,
+    setLocationCandidate,
+  ] = useState<{
+    address: string;
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+  const circleRef = useRef<any>(null);
+
+  const mapListenersRef =
+    useRef<any[]>([]);
+
+  const markerListenersRef =
+    useRef<any[]>([]);
+
+  /* ------------------------------------------------------------------------ */
+  /* GOOGLE MAPS LOADER                                                        */
+  /* ------------------------------------------------------------------------ */
+
+  const loadGoogleMaps = useCallback(() => {
+    if (
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    const existingGoogle =
+      (window as any).google;
+
+    if (
+      existingGoogle?.maps
+    ) {
+      setGoogleMapsLoaded(true);
+      return;
+    }
+
+    const existingScript =
+      document.getElementById(
+        "google-maps-script"
+      );
+
+    if (existingScript) {
+      existingScript.addEventListener(
+        "load",
+        () => {
+          if (
+            (window as any).google?.maps
+          ) {
+            setGoogleMapsLoaded(true);
+          }
+        }
+      );
+
+      return;
+    }
+
+    const apiKey =
+      process.env
+        .NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+    if (!apiKey) {
+      setErrorMessage(
+        "Google Maps could not be loaded. Please try again later."
+      );
+      return;
+    }
+
+    const script =
+      document.createElement("script");
+
+    script.id =
+      "google-maps-script";
+
+    script.src =
+      `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
+        apiKey
+      )}&libraries=geometry`;
+
+    script.async = true;
+    script.defer = true;
+
+    script.onload = () => {
+      if (
+        (window as any).google?.maps
+      ) {
+        setGoogleMapsLoaded(true);
+      } else {
+        setErrorMessage(
+          "Google Maps could not be initialized. Please try again."
+        );
+      }
+    };
+
+    script.onerror = () => {
+      setErrorMessage(
+        "Unable to load Google Maps. Please try again."
+      );
+    };
+
+    document.head.appendChild(script);
+  }, []);
+
+  /* ------------------------------------------------------------------------ */
+  /* CHANGE REQUEST STATUS                                                     */
+  /* ------------------------------------------------------------------------ */
+
+  const [
+    changeRequestStatus,
+    setChangeRequestStatus,
+  ] =
     useState<ChangeRequestStatus>(null);
 
-  /*
-   * =========================================================
-   * LOAD SHOP + CHECK LATEST CHANGE REQUEST
-   * =========================================================
-   */
+  /* ------------------------------------------------------------------------ */
+  /* LOAD SHOP                                                                 */
+  /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
     let mounted = true;
@@ -234,19 +471,16 @@ export default function EditShopPage() {
           return;
         }
 
-        /*
-         * =====================================================
-         * FIRST:
-         * CHECK LATEST SHOP CHANGE REQUEST
-         * =====================================================
-         */
+        /* CHECK LATEST CHANGE REQUEST */
 
         const {
           data: latestRequest,
           error: requestError,
         } = await supabase
           .from("shop_changes_request")
-          .select("status, created_at, updated_at")
+          .select(
+            "status, created_at, updated_at"
+          )
           .eq("user_id", user.id)
           .order("created_at", {
             ascending: false,
@@ -262,12 +496,6 @@ export default function EditShopPage() {
             requestError
           );
 
-          /*
-           * If status column/table query fails,
-           * don't silently lock the user.
-           *
-           * Show the actual error.
-           */
           setErrorMessage(
             requestError.message ||
               "We couldn't check your shop change request."
@@ -276,25 +504,13 @@ export default function EditShopPage() {
           return;
         }
 
-        /*
-         * IMPORTANT:
-         *
-         * Only PENDING locks the screen.
-         *
-         * approved/rejected/null = normal edit screen.
-         */
-
         const status =
           (latestRequest?.status as ChangeRequestStatus) ||
           null;
 
         setChangeRequestStatus(status);
 
-        /*
-         * =====================================================
-         * LOAD APPROVED SHOP
-         * =====================================================
-         */
+        /* LOAD APPROVED SHOP */
 
         const {
           data: shopData,
@@ -311,6 +527,8 @@ export default function EditShopPage() {
               owner_name,
               phone,
               address,
+              latitude,
+              longitude,
               opening_time,
               closing_time,
               store_image_url
@@ -349,19 +567,52 @@ export default function EditShopPage() {
         }
 
         const loadedForm: ShopForm = {
-          storeName: shopData.store_name || "",
-          description: shopData.description || "",
-          category: shopData.category || "",
-          ownerName: shopData.owner_name || "",
-          phone: shopData.phone || "",
-          address: shopData.address || "",
-          openingTime: shopData.opening_time || "",
-          closingTime: shopData.closing_time || "",
+          storeName:
+            shopData.store_name || "",
+
+          description:
+            shopData.description || "",
+
+          category:
+            shopData.category || "",
+
+          ownerName:
+            shopData.owner_name || "",
+
+          phone:
+            shopData.phone || "",
+
+          address:
+            shopData.address || "",
+
+          latitude:
+            typeof shopData.latitude ===
+              "number"
+              ? shopData.latitude
+              : shopData.latitude !== null
+              ? Number(shopData.latitude)
+              : null,
+
+          longitude:
+            typeof shopData.longitude ===
+              "number"
+              ? shopData.longitude
+              : shopData.longitude !== null
+              ? Number(shopData.longitude)
+              : null,
+
+          openingTime:
+            shopData.opening_time || "",
+
+          closingTime:
+            shopData.closing_time || "",
         };
 
         if (!mounted) return;
 
-        setShop(shopData as ShopRecord);
+        setShop(
+          shopData as ShopRecord
+        );
 
         setForm(loadedForm);
         setOriginalForm(loadedForm);
@@ -369,6 +620,18 @@ export default function EditShopPage() {
         setCurrentImageUrl(
           shopData.store_image_url || null
         );
+
+        if (
+          loadedForm.latitude !== null &&
+          loadedForm.longitude !== null
+        ) {
+          setSelectedMapLocation({
+            latitude:
+              loadedForm.latitude,
+            longitude:
+              loadedForm.longitude,
+          });
+        }
       } catch (error) {
         console.error(
           "Edit shop load error:",
@@ -396,27 +659,27 @@ export default function EditShopPage() {
     };
   }, [router, supabase]);
 
-  /*
-   * =========================================================
-   * CLEAN PREVIEW URL
-   * =========================================================
-   */
+  /* ------------------------------------------------------------------------ */
+  /* CLEAN PREVIEW URL                                                         */
+  /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
     return () => {
       if (newImagePreview) {
-        URL.revokeObjectURL(newImagePreview);
+        URL.revokeObjectURL(
+          newImagePreview
+        );
       }
     };
   }, [newImagePreview]);
 
-  /*
-   * =========================================================
-   * UPDATE FORM FIELD
-   * =========================================================
-   */
+  /* ------------------------------------------------------------------------ */
+  /* UPDATE FORM                                                               */
+  /* ------------------------------------------------------------------------ */
 
-  const updateField = <K extends keyof ShopForm>(
+  const updateField = <
+    K extends keyof ShopForm
+  >(
     field: K,
     value: ShopForm[K]
   ) => {
@@ -429,16 +692,452 @@ export default function EditShopPage() {
     setSuccessMessage("");
   };
 
-  /*
-   * =========================================================
-   * IMAGE SELECT
-   * =========================================================
-   */
+  /* ------------------------------------------------------------------------ */
+  /* CURRENT LOCATION                                                          */
+  /* ------------------------------------------------------------------------ */
+
+  const handleUseCurrentLocation = () => {
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.geolocation
+    ) {
+      setErrorMessage(
+        "Your browser does not support location services."
+      );
+      return;
+    }
+
+    setLocationLoading(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const latitude =
+          position.coords.latitude;
+
+        const longitude =
+          position.coords.longitude;
+
+        const accuracy =
+          position.coords.accuracy;
+
+        console.log(
+          "EDIT SHOP GPS LOCATION:",
+          {
+            latitude,
+            longitude,
+            accuracyMeters:
+              Number(
+                accuracy.toFixed(1)
+              ),
+          }
+        );
+
+        if (
+          !isInsideServiceArea(
+            latitude,
+            longitude
+          )
+        ) {
+          setLocationLoading(false);
+
+          setErrorMessage(
+            "Sorry, your shop is outside Apna Shyampur's delivery area yet."
+          );
+
+          return;
+        }
+
+        setSelectedMapLocation({
+          latitude,
+          longitude,
+        });
+
+        setLocationCandidate(null);
+        setLocationModal(true);
+        setLocationLoading(false);
+
+        loadGoogleMaps();
+      },
+      (error) => {
+        console.error(
+          "Shop geolocation error:",
+          {
+            code: error.code,
+            message: error.message,
+          }
+        );
+
+        setLocationLoading(false);
+
+        if (error.code === 1) {
+          setErrorMessage(
+            "Location access was denied. Please allow location access for this site and try again."
+          );
+        } else if (
+          error.code === 2
+        ) {
+          setErrorMessage(
+            "Your device could not determine your location. Please make sure Location is turned on and try again."
+          );
+        } else if (
+          error.code === 3
+        ) {
+          setErrorMessage(
+            "We couldn't determine your shop location in time. Please try again."
+          );
+        } else {
+          setErrorMessage(
+            "We couldn't access your current location. Please try again."
+          );
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0,
+      }
+    );
+  };
+
+  /* ------------------------------------------------------------------------ */
+  /* MAP                                                                       */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (
+      !locationModal ||
+      !googleMapsLoaded ||
+      !mapContainer ||
+      !selectedMapLocation
+    ) {
+      return;
+    }
+
+    const googleObject =
+      (window as any).google;
+
+    if (!googleObject?.maps) {
+      return;
+    }
+
+    if (mapRef.current) {
+      return;
+    }
+
+    const map =
+      new googleObject.maps.Map(
+        mapContainer,
+        {
+          center: {
+            lat:
+              selectedMapLocation.latitude,
+            lng:
+              selectedMapLocation.longitude,
+          },
+
+          zoom: 17,
+
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          zoomControl: true,
+
+          gestureHandling:
+            "greedy",
+
+          clickableIcons: false,
+          mapTypeId:
+            googleObject.maps.MapTypeId
+              .ROADMAP,
+        }
+      );
+
+    mapRef.current = map;
+
+    /* SERVICE AREA CIRCLE */
+
+    const circle =
+      new googleObject.maps.Circle({
+        map,
+        center: {
+          lat: SERVICE_CENTER.lat,
+          lng: SERVICE_CENTER.lng,
+        },
+        radius:
+          SERVICE_RADIUS_KM * 1000,
+
+        strokeColor: "#159447",
+        strokeOpacity: 0.75,
+        strokeWeight: 2,
+
+        fillColor: "#159447",
+        fillOpacity: 0.08,
+
+        clickable: false,
+      });
+
+    circleRef.current = circle;
+
+    /* MARKER */
+
+    const marker =
+      new googleObject.maps.Marker({
+        map,
+        position: {
+          lat:
+            selectedMapLocation.latitude,
+          lng:
+            selectedMapLocation.longitude,
+        },
+        draggable: true,
+        title: "Your shop location",
+        animation:
+          googleObject.maps.Animation
+            ? googleObject.maps.Animation.DROP
+            : undefined,
+      });
+
+    markerRef.current = marker;
+
+    const updateLocationFromPoint =
+      async (
+        latitude: number,
+        longitude: number
+      ) => {
+        if (
+          !isInsideServiceArea(
+            latitude,
+            longitude
+          )
+        ) {
+          setErrorMessage(
+            "This location is outside Apna Shyampur's delivery area. Please place your shop pin inside the green area."
+          );
+
+          if (
+            selectedMapLocation
+          ) {
+            marker.setPosition({
+              lat:
+                selectedMapLocation.latitude,
+              lng:
+                selectedMapLocation.longitude,
+            });
+          }
+
+          return;
+        }
+
+        setErrorMessage("");
+        setLocationLoading(true);
+
+        setSelectedMapLocation({
+          latitude,
+          longitude,
+        });
+
+        try {
+          const address =
+            await reverseGeocodeLocation(
+              latitude,
+              longitude
+            );
+
+          setLocationCandidate({
+            address,
+            latitude,
+            longitude,
+          });
+        } catch (error) {
+          console.error(
+            "Reverse geocode error:",
+            error
+          );
+
+          setLocationCandidate({
+            address:
+              form.address.trim() ||
+              "Selected shop location",
+            latitude,
+            longitude,
+          });
+
+          setErrorMessage(
+            "Location selected, but we couldn't automatically read the address. You can still confirm this location."
+          );
+        } finally {
+          setLocationLoading(false);
+        }
+      };
+
+    const dragListener =
+      marker.addListener(
+        "dragend",
+        () => {
+          const position =
+            marker.getPosition();
+
+          if (!position) return;
+
+          void updateLocationFromPoint(
+            position.lat(),
+            position.lng()
+          );
+        }
+      );
+
+    markerListenersRef.current.push(
+      dragListener
+    );
+
+    const mapClickListener =
+      map.addListener(
+        "click",
+        (
+          event: any
+        ) => {
+          if (!event?.latLng) {
+            return;
+          }
+
+          const latitude =
+            event.latLng.lat();
+
+          const longitude =
+            event.latLng.lng();
+
+          if (
+            !isInsideServiceArea(
+              latitude,
+              longitude
+            )
+          ) {
+            setErrorMessage(
+              "This location is outside Apna Shyampur's delivery area. Please select a point inside the green area."
+            );
+
+            return;
+          }
+
+          marker.setPosition({
+            lat: latitude,
+            lng: longitude,
+          });
+
+          void updateLocationFromPoint(
+            latitude,
+            longitude
+          );
+        }
+      );
+
+    mapListenersRef.current.push(
+      mapClickListener
+    );
+
+    return () => {
+      mapListenersRef.current.forEach(
+        (listener) => {
+          try {
+            listener?.remove?.();
+          } catch {}
+        }
+      );
+
+      markerListenersRef.current.forEach(
+        (listener) => {
+          try {
+            listener?.remove?.();
+          } catch {}
+        }
+      );
+
+      mapListenersRef.current = [];
+      markerListenersRef.current = [];
+
+      if (circleRef.current) {
+        circleRef.current.setMap(null);
+      }
+
+      if (markerRef.current) {
+        markerRef.current.setMap(null);
+      }
+
+      circleRef.current = null;
+      markerRef.current = null;
+      mapRef.current = null;
+    };
+  }, [
+    locationModal,
+    googleMapsLoaded,
+    mapContainer,
+    selectedMapLocation,
+    form.address,
+  ]);
+
+  /* ------------------------------------------------------------------------ */
+  /* CONFIRM LOCATION                                                          */
+  /* ------------------------------------------------------------------------ */
+
+  const handleConfirmShopLocation =
+    () => {
+      if (!locationCandidate) {
+        setErrorMessage(
+          "Please select your shop location on the map first."
+        );
+        return;
+      }
+
+      if (
+        !isInsideServiceArea(
+          locationCandidate.latitude,
+          locationCandidate.longitude
+        )
+      ) {
+        setErrorMessage(
+          "This location is outside Apna Shyampur's delivery area. Please select a point inside the green area."
+        );
+        return;
+      }
+
+      updateField(
+        "address",
+        locationCandidate.address
+      );
+
+      updateField(
+        "latitude",
+        locationCandidate.latitude
+      );
+
+      updateField(
+        "longitude",
+        locationCandidate.longitude
+      );
+
+      setSelectedMapLocation({
+        latitude:
+          locationCandidate.latitude,
+        longitude:
+          locationCandidate.longitude,
+      });
+
+      setLocationModal(false);
+      setLocationCandidate(null);
+      setErrorMessage("");
+    };
+
+  /* ------------------------------------------------------------------------ */
+  /* IMAGE SELECT                                                              */
+  /* ------------------------------------------------------------------------ */
 
   const handleImageChange = (
     event: ChangeEvent<HTMLInputElement>
   ) => {
-    const file = event.target.files?.[0];
+    const file =
+      event.target.files?.[0];
 
     event.target.value = "";
 
@@ -451,7 +1150,6 @@ export default function EditShopPage() {
       setErrorMessage(
         "Please select a valid image file."
       );
-
       return;
     }
 
@@ -459,19 +1157,23 @@ export default function EditShopPage() {
       setErrorMessage(
         "Shop image must be 10 MB or smaller."
       );
-
       return;
     }
 
     if (newImagePreview) {
-      URL.revokeObjectURL(newImagePreview);
+      URL.revokeObjectURL(
+        newImagePreview
+      );
     }
 
     if (cropImage) {
-      URL.revokeObjectURL(cropImage);
+      URL.revokeObjectURL(
+        cropImage
+      );
     }
 
-    const imageUrl = URL.createObjectURL(file);
+    const imageUrl =
+      URL.createObjectURL(file);
 
     setCropImage(imageUrl);
     setCropFileName(file.name);
@@ -486,25 +1188,27 @@ export default function EditShopPage() {
     setCropOpen(true);
   };
 
-  /*
-   * =========================================================
-   * CROP
-   * =========================================================
-   */
+  /* ------------------------------------------------------------------------ */
+  /* CROP                                                                      */
+  /* ------------------------------------------------------------------------ */
 
   const onCropComplete = useCallback(
     (
       _croppedArea: Area,
       croppedPixels: Area
     ) => {
-      setCroppedAreaPixels(croppedPixels);
+      setCroppedAreaPixels(
+        croppedPixels
+      );
     },
     []
   );
 
   const handleCropCancel = () => {
     if (cropImage) {
-      URL.revokeObjectURL(cropImage);
+      URL.revokeObjectURL(
+        cropImage
+      );
     }
 
     setCropImage(null);
@@ -519,37 +1223,96 @@ export default function EditShopPage() {
     setCroppedAreaPixels(null);
   };
 
-  const handleCropConfirm = async () => {
-    if (
-      !cropImage ||
-      !croppedAreaPixels ||
-      cropSaving
-    ) {
-      return;
-    }
-
-    try {
-      setCropSaving(true);
-      setErrorMessage("");
-
-      const croppedFile = await getCroppedImg(
-        cropImage,
-        croppedAreaPixels,
-        cropFileName
-      );
-
-      if (newImagePreview) {
-        URL.revokeObjectURL(newImagePreview);
+  const handleCropConfirm =
+    async () => {
+      if (
+        !cropImage ||
+        !croppedAreaPixels ||
+        cropSaving
+      ) {
+        return;
       }
 
-      const croppedPreviewUrl =
-        URL.createObjectURL(croppedFile);
+      try {
+        setCropSaving(true);
+        setErrorMessage("");
 
-      setNewImageFile(croppedFile);
-      setNewImagePreview(croppedPreviewUrl);
+        const croppedFile =
+          await getCroppedImg(
+            cropImage,
+            croppedAreaPixels,
+            cropFileName
+          );
 
-      URL.revokeObjectURL(cropImage);
+        if (newImagePreview) {
+          URL.revokeObjectURL(
+            newImagePreview
+          );
+        }
 
+        const croppedPreviewUrl =
+          URL.createObjectURL(
+            croppedFile
+          );
+
+        setNewImageFile(
+          croppedFile
+        );
+
+        setNewImagePreview(
+          croppedPreviewUrl
+        );
+
+        URL.revokeObjectURL(
+          cropImage
+        );
+
+        setCropImage(null);
+        setCropOpen(false);
+
+        setCrop({
+          x: 0,
+          y: 0,
+        });
+
+        setZoom(1);
+        setCroppedAreaPixels(null);
+      } catch (error) {
+        console.error(
+          "Crop image error:",
+          error
+        );
+
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Unable to crop the shop image."
+        );
+      } finally {
+        setCropSaving(false);
+      }
+    };
+
+  /* ------------------------------------------------------------------------ */
+  /* CANCEL NEW IMAGE                                                          */
+  /* ------------------------------------------------------------------------ */
+
+  const handleCancelNewImage =
+    () => {
+      if (newImagePreview) {
+        URL.revokeObjectURL(
+          newImagePreview
+        );
+      }
+
+      if (cropImage) {
+        URL.revokeObjectURL(
+          cropImage
+        );
+      }
+
+      setNewImagePreview(null);
+      setNewImageFile(null);
       setCropImage(null);
       setCropOpen(false);
 
@@ -560,68 +1323,33 @@ export default function EditShopPage() {
 
       setZoom(1);
       setCroppedAreaPixels(null);
-    } catch (error) {
-      console.error(
-        "Crop image error:",
-        error
-      );
 
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to crop the shop image."
-      );
-    } finally {
-      setCropSaving(false);
-    }
-  };
+      setErrorMessage("");
+      setSuccessMessage("");
+    };
 
-  /*
-   * =========================================================
-   * CANCEL NEW IMAGE
-   * =========================================================
-   */
-
-  const handleCancelNewImage = () => {
-    if (newImagePreview) {
-      URL.revokeObjectURL(newImagePreview);
-    }
-
-    if (cropImage) {
-      URL.revokeObjectURL(cropImage);
-    }
-
-    setNewImagePreview(null);
-    setNewImageFile(null);
-
-    setCropImage(null);
-    setCropOpen(false);
-
-    setCrop({
-      x: 0,
-      y: 0,
-    });
-
-    setZoom(1);
-    setCroppedAreaPixels(null);
-
-    setErrorMessage("");
-    setSuccessMessage("");
-  };
-
-  /*
-   * =========================================================
-   * VALIDATION
-   * =========================================================
-   */
+  /* ------------------------------------------------------------------------ */
+  /* VALIDATION                                                                */
+  /* ------------------------------------------------------------------------ */
 
   const validateForm = () => {
-    const storeName = form.storeName.trim();
-    const description = form.description.trim();
-    const category = form.category.trim();
-    const ownerName = form.ownerName.trim();
-    const phone = form.phone.trim();
-    const address = form.address.trim();
+    const storeName =
+      form.storeName.trim();
+
+    const description =
+      form.description.trim();
+
+    const category =
+      form.category.trim();
+
+    const ownerName =
+      form.ownerName.trim();
+
+    const phone =
+      form.phone.trim();
+
+    const address =
+      form.address.trim();
 
     if (!storeName) {
       return "Please enter your shop name.";
@@ -656,7 +1384,23 @@ export default function EditShopPage() {
     }
 
     if (!address) {
-      return "Please enter your shop location.";
+      return "Please select your shop location.";
+    }
+
+    if (
+      form.latitude === null ||
+      form.longitude === null
+    ) {
+      return "Please select your shop location on the map.";
+    }
+
+    if (
+      !isInsideServiceArea(
+        form.latitude,
+        form.longitude
+      )
+    ) {
+      return "Sorry, your shop is outside Apna Shyampur's delivery area yet.";
     }
 
     if (!form.openingTime) {
@@ -670,340 +1414,143 @@ export default function EditShopPage() {
     return "";
   };
 
-  /*
-   * =========================================================
-   * BUILD ONLY CHANGED VALUES
-   * =========================================================
-   */
+  /* ------------------------------------------------------------------------ */
+  /* BUILD ONLY CHANGED VALUES                                                */
+  /* ------------------------------------------------------------------------ */
 
-  const buildChanges = (): ChangeRequestPayload => {
-    const changes: ChangeRequestPayload = {};
+  const buildChanges =
+    (): ChangeRequestPayload => {
+      const changes: ChangeRequestPayload =
+        {};
 
-    if (
-      form.storeName.trim() !==
-      originalForm.storeName.trim()
-    ) {
-      changes.store_name =
-        form.storeName.trim();
-    }
-
-    if (
-      form.description.trim() !==
-      originalForm.description.trim()
-    ) {
-      changes.description =
-        form.description.trim();
-    }
-
-    if (
-      form.category !==
-      originalForm.category
-    ) {
-      changes.category = form.category;
-    }
-
-    if (
-      form.ownerName.trim() !==
-      originalForm.ownerName.trim()
-    ) {
-      changes.owner_name =
-        form.ownerName.trim();
-    }
-
-    if (
-      form.phone.trim() !==
-      originalForm.phone.trim()
-    ) {
-      changes.phone = form.phone.trim();
-    }
-
-    if (
-      form.address.trim() !==
-      originalForm.address.trim()
-    ) {
-      changes.address =
-        form.address.trim();
-    }
-
-    if (
-      form.openingTime !==
-      originalForm.openingTime
-    ) {
-      changes.opening_time =
-        form.openingTime;
-    }
-
-    if (
-      form.closingTime !==
-      originalForm.closingTime
-    ) {
-      changes.closing_time =
-        form.closingTime;
-    }
-
-    return changes;
-  };
-
-  /*
-   * =========================================================
-   * OPEN CONFIRMATION
-   * =========================================================
-   *
-   * EXTRA SAFETY:
-   *
-   * Even if the UI somehow still exists while a request
-   * becomes pending, don't allow another submission.
-   */
-
-  const handleSendForReview = async () => {
-    if (saving) return;
-
-    /*
-     * If already pending, NEVER allow another request.
-     */
-
-    if (changeRequestStatus === "pending") {
-      setErrorMessage(
-        "Your shop changes are already under review."
-      );
-
-      return;
-    }
-
-    setErrorMessage("");
-    setSuccessMessage("");
-
-    const validationError =
-      validateForm();
-
-    if (validationError) {
-      setErrorMessage(validationError);
-      return;
-    }
-
-    const changes = buildChanges();
-
-    const hasTextChanges =
-      Object.keys(changes).length > 0;
-
-    const hasImageChange =
-      !!newImageFile;
-
-    if (
-      !hasTextChanges &&
-      !hasImageChange
-    ) {
-      setErrorMessage(
-        "You haven't made any changes to your shop."
-      );
-
-      return;
-    }
-
-    setConfirmOpen(true);
-  };
-
-  /*
-   * =========================================================
-   * UPLOAD IMAGE
-   * =========================================================
-   */
-
-  const uploadChangeImage = async (
-    userId: string,
-    requestId: string,
-    file: File
-  ) => {
-    const extension =
-      file.name
-        .split(".")
-        .pop()
-        ?.toLowerCase() || "jpg";
-
-    const safeExtension =
-      extension.replace(
-        /[^a-z0-9]/g,
-        ""
-      ) || "jpg";
-
-    const filePath =
-      `${userId}/${requestId}/shop-image.${safeExtension}`;
-
-    setImageUploading(true);
-
-    try {
-      const {
-        error: uploadError,
-      } = await supabase.storage
-        .from("changes_request")
-        .upload(
-          filePath,
-          file,
-          {
-            cacheControl: "3600",
-            upsert: true,
-            contentType: file.type,
-          }
-        );
-
-      if (uploadError) {
-        console.error(
-          "Change image upload error:",
-          uploadError
-        );
-
-        throw new Error(
-          uploadError.message ||
-            "Unable to upload the new shop image."
-        );
+      if (
+        form.storeName.trim() !==
+        originalForm.storeName.trim()
+      ) {
+        changes.store_name =
+          form.storeName.trim();
       }
 
-      const {
-        data: publicUrlData,
-      } = supabase.storage
-        .from("changes_request")
-        .getPublicUrl(filePath);
-
-      const publicUrl =
-        publicUrlData?.publicUrl || null;
-
-      if (!publicUrl) {
-        throw new Error(
-          "Unable to create the new shop image URL."
-        );
+      if (
+        form.description.trim() !==
+        originalForm.description.trim()
+      ) {
+        changes.description =
+          form.description.trim();
       }
 
-      return {
-        path: filePath,
-        url: publicUrl,
-      };
-    } finally {
-      setImageUploading(false);
-    }
-  };
-
-  /*
-   * =========================================================
-   * DELETE UPLOADED IMAGE IF INSERT FAILS
-   * =========================================================
-   */
-
-  const deleteChangeImage = async (
-    filePath: string
-  ) => {
-    try {
-      const { error } =
-        await supabase.storage
-          .from("changes_request")
-          .remove([filePath]);
-
-      if (error) {
-        console.error(
-          "Cleanup change image error:",
-          error
-        );
-      }
-    } catch (error) {
-      console.error(
-        "Cleanup change image exception:",
-        error
-      );
-    }
-  };
-
-  /*
-   * =========================================================
-   * FINAL SUBMIT
-   * =========================================================
-   *
-   * FINAL OUTPUT:
-   *
-   * 1. Image -> changes_request bucket
-   *
-   * 2. Details -> shop_changes_request
-   *
-   * IMPORTANT:
-   *
-   * status is explicitly set to pending.
-   *
-   * This makes the request lock the edit screen.
-   */
-
-  const handleConfirmReview = async () => {
-    if (saving) return;
-
-    /*
-     * FINAL FRONTEND SAFETY CHECK
-     */
-
-    if (changeRequestStatus === "pending") {
-      setConfirmOpen(false);
-
-      setErrorMessage(
-        "Your shop changes are already under review."
-      );
-
-      return;
-    }
-
-    let uploadedImagePath: string | null = null;
-
-    try {
-      setSaving(true);
-      setErrorMessage("");
-      setSuccessMessage("");
-
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        throw new Error(
-          "Your session has expired. Please sign in again."
-        );
+      if (
+        form.category !==
+        originalForm.category
+      ) {
+        changes.category =
+          form.category;
       }
 
-      /*
-       * =====================================================
-       * IMPORTANT:
-       *
-       * CHECK DATABASE AGAIN BEFORE INSERT.
-       *
-       * This prevents duplicate pending requests if the user
-       * has the page open in multiple tabs.
-       * =====================================================
-       */
-
-      const {
-        data: existingPendingRequest,
-        error: pendingCheckError,
-      } = await supabase
-        .from("shop_changes_request")
-        .select("id, status")
-        .eq("user_id", user.id)
-        .eq("status", "pending")
-        .limit(1)
-        .maybeSingle();
-
-      if (pendingCheckError) {
-        throw new Error(
-          pendingCheckError.message ||
-            "Unable to verify your existing shop changes."
-        );
+      if (
+        form.ownerName.trim() !==
+        originalForm.ownerName.trim()
+      ) {
+        changes.owner_name =
+          form.ownerName.trim();
       }
 
-      if (existingPendingRequest) {
-        setChangeRequestStatus("pending");
-        setConfirmOpen(false);
+      if (
+        form.phone.trim() !==
+        originalForm.phone.trim()
+      ) {
+        changes.phone =
+          form.phone.trim();
+      }
 
+      const addressChanged =
+        form.address.trim() !==
+        originalForm.address.trim();
+
+      const latitudeChanged =
+        form.latitude !==
+        originalForm.latitude;
+
+      const longitudeChanged =
+        form.longitude !==
+        originalForm.longitude;
+
+      if (
+        addressChanged ||
+        latitudeChanged ||
+        longitudeChanged
+      ) {
+        changes.address =
+          form.address.trim();
+
+        if (
+          form.latitude !== null &&
+          form.longitude !== null
+        ) {
+          changes.latitude =
+            form.latitude;
+
+          changes.longitude =
+            form.longitude;
+        }
+      }
+
+      if (
+        form.openingTime !==
+        originalForm.openingTime
+      ) {
+        changes.opening_time =
+          form.openingTime;
+      }
+
+      if (
+        form.closingTime !==
+        originalForm.closingTime
+      ) {
+        changes.closing_time =
+          form.closingTime;
+      }
+
+      return changes;
+    };
+
+  /* ------------------------------------------------------------------------ */
+  /* OPEN CONFIRMATION                                                         */
+  /* ------------------------------------------------------------------------ */
+
+  const handleSendForReview =
+    async () => {
+      if (saving) return;
+
+      if (
+        changeRequestStatus ===
+        "pending"
+      ) {
+        setErrorMessage(
+          "Your shop changes are already under review."
+        );
         return;
       }
 
-      const changes = buildChanges();
+      setErrorMessage("");
+      setSuccessMessage("");
+
+      const validationError =
+        validateForm();
+
+      if (validationError) {
+        setErrorMessage(
+          validationError
+        );
+        return;
+      }
+
+      const changes =
+        buildChanges();
 
       const hasTextChanges =
-        Object.keys(changes).length > 0;
+        Object.keys(changes)
+          .length > 0;
 
       const hasImageChange =
         !!newImageFile;
@@ -1012,132 +1559,344 @@ export default function EditShopPage() {
         !hasTextChanges &&
         !hasImageChange
       ) {
-        throw new Error(
+        setErrorMessage(
           "You haven't made any changes to your shop."
         );
+        return;
       }
 
-      /*
-       * =====================================================
-       * CREATE REQUEST ID
-       * =====================================================
-       */
+      setConfirmOpen(true);
+    };
 
-      const requestId =
-        crypto.randomUUID();
+  /* ------------------------------------------------------------------------ */
+  /* UPLOAD IMAGE                                                              */
+  /* ------------------------------------------------------------------------ */
 
-      /*
-       * =====================================================
-       * IMAGE
-       * =====================================================
-       */
+  const uploadChangeImage =
+    async (
+      userId: string,
+      requestId: string,
+      file: File
+    ) => {
+      const extension =
+        file.name
+          .split(".")
+          .pop()
+          ?.toLowerCase() ||
+        "jpg";
 
-      if (newImageFile) {
-        const uploadedImage =
-          await uploadChangeImage(
-            user.id,
-            requestId,
-            newImageFile
+      const safeExtension =
+        extension.replace(
+          /[^a-z0-9]/g,
+          ""
+        ) || "jpg";
+
+      const filePath =
+        `${userId}/${requestId}/shop-image.${safeExtension}`;
+
+      setImageUploading(true);
+
+      try {
+        const {
+          error: uploadError,
+        } = await supabase.storage
+          .from("changes_request")
+          .upload(
+            filePath,
+            file,
+            {
+              cacheControl:
+                "3600",
+              upsert: true,
+              contentType:
+                file.type,
+            }
           );
 
-        uploadedImagePath =
-          uploadedImage.path;
+        if (uploadError) {
+          console.error(
+            "Change image upload error:",
+            uploadError
+          );
 
-        changes.store_image_url =
-          uploadedImage.url;
-      }
-
-      /*
-       * =====================================================
-       * INSERT CHANGE REQUEST
-       * =====================================================
-       */
-
-      const {
-        error: insertError,
-      } = await supabase
-        .from("shop_changes_request")
-        .insert({
-          id: requestId,
-          user_id: user.id,
-          changes,
-          status: "pending",
-          updated_at:
-            new Date().toISOString(),
-        });
-
-      if (insertError) {
-        console.error(
-          "Save shop changes error:",
-          insertError
-        );
-
-        if (uploadedImagePath) {
-          await deleteChangeImage(
-            uploadedImagePath
+          throw new Error(
+            uploadError.message ||
+              "Unable to upload the new shop image."
           );
         }
 
-        throw new Error(
-          insertError.message ||
-            "Unable to save your shop changes."
+        const {
+          data: publicUrlData,
+        } =
+          supabase.storage
+            .from(
+              "changes_request"
+            )
+            .getPublicUrl(
+              filePath
+            );
+
+        const publicUrl =
+          publicUrlData?.publicUrl ||
+          null;
+
+        if (!publicUrl) {
+          throw new Error(
+            "Unable to create the new shop image URL."
+          );
+        }
+
+        return {
+          path: filePath,
+          url: publicUrl,
+        };
+      } finally {
+        setImageUploading(false);
+      }
+    };
+
+  /* ------------------------------------------------------------------------ */
+  /* DELETE UPLOADED IMAGE IF INSERT FAILS                                    */
+  /* ------------------------------------------------------------------------ */
+
+  const deleteChangeImage =
+    async (
+      filePath: string
+    ) => {
+      try {
+        const { error } =
+          await supabase.storage
+            .from(
+              "changes_request"
+            )
+            .remove([
+              filePath,
+            ]);
+
+        if (error) {
+          console.error(
+            "Cleanup change image error:",
+            error
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Cleanup change image exception:",
+          error
         );
       }
+    };
 
-      /*
-       * =====================================================
-       * SUCCESS
-       * =====================================================
-       *
-       * DO NOT router.replace("/shop")
-       *
-       * Instead:
-       * immediately show the review screen.
-       */
+  /* ------------------------------------------------------------------------ */
+  /* FINAL SUBMIT                                                              */
+  /* ------------------------------------------------------------------------ */
 
-      setConfirmOpen(false);
+  const handleConfirmReview =
+    async () => {
+      if (saving) return;
 
-      setChangeRequestStatus("pending");
+      if (
+        changeRequestStatus ===
+        "pending"
+      ) {
+        setConfirmOpen(false);
 
-      setSuccessMessage("");
-
-      if (newImagePreview) {
-        URL.revokeObjectURL(
-          newImagePreview
+        setErrorMessage(
+          "Your shop changes are already under review."
         );
+
+        return;
       }
 
-      setNewImagePreview(null);
-      setNewImageFile(null);
-    } catch (error) {
-      console.error(
-        "Save shop changes error:",
-        error
-      );
+      let uploadedImagePath:
+        | string
+        | null = null;
 
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to save your shop changes. Please try again."
-      );
+      try {
+        setSaving(true);
+        setErrorMessage("");
+        setSuccessMessage("");
 
-      setConfirmOpen(false);
-    } finally {
-      setSaving(false);
-      setImageUploading(false);
-    }
-  };
+        const {
+          data: { user },
+          error: userError,
+        } =
+          await supabase.auth.getUser();
 
-  /*
-   * =========================================================
-   * LOADING
-   * =========================================================
-   */
+        if (userError || !user) {
+          throw new Error(
+            "Your session has expired. Please sign in again."
+          );
+        }
+
+        /* CHECK DATABASE AGAIN */
+
+        const {
+          data:
+            existingPendingRequest,
+          error:
+            pendingCheckError,
+        } =
+          await supabase
+            .from(
+              "shop_changes_request"
+            )
+            .select(
+              "id, status"
+            )
+            .eq(
+              "user_id",
+              user.id
+            )
+            .eq(
+              "status",
+              "pending"
+            )
+            .limit(1)
+            .maybeSingle();
+
+        if (pendingCheckError) {
+          throw new Error(
+            pendingCheckError.message ||
+              "Unable to verify your existing shop changes."
+          );
+        }
+
+        if (
+          existingPendingRequest
+        ) {
+          setChangeRequestStatus(
+            "pending"
+          );
+
+          setConfirmOpen(false);
+
+          return;
+        }
+
+        const changes =
+          buildChanges();
+
+        const hasTextChanges =
+          Object.keys(changes)
+            .length > 0;
+
+        const hasImageChange =
+          !!newImageFile;
+
+        if (
+          !hasTextChanges &&
+          !hasImageChange
+        ) {
+          throw new Error(
+            "You haven't made any changes to your shop."
+          );
+        }
+
+        /* REQUEST ID */
+
+        const requestId =
+          crypto.randomUUID();
+
+        /* IMAGE */
+
+        if (newImageFile) {
+          const uploadedImage =
+            await uploadChangeImage(
+              user.id,
+              requestId,
+              newImageFile
+            );
+
+          uploadedImagePath =
+            uploadedImage.path;
+
+          changes.store_image_url =
+            uploadedImage.url;
+        }
+
+        /* INSERT */
+
+        const {
+          error: insertError,
+        } = await supabase
+          .from(
+            "shop_changes_request"
+          )
+          .insert({
+            id: requestId,
+            user_id: user.id,
+            changes,
+            status: "pending",
+            updated_at:
+              new Date().toISOString(),
+          });
+
+        if (insertError) {
+          console.error(
+            "Save shop changes error:",
+            insertError
+          );
+
+          if (
+            uploadedImagePath
+          ) {
+            await deleteChangeImage(
+              uploadedImagePath
+            );
+          }
+
+          throw new Error(
+            insertError.message ||
+              "Unable to save your shop changes."
+          );
+        }
+
+        /* SUCCESS */
+
+        setConfirmOpen(false);
+        setChangeRequestStatus(
+          "pending"
+        );
+        setSuccessMessage("");
+
+        if (newImagePreview) {
+          URL.revokeObjectURL(
+            newImagePreview
+          );
+        }
+
+        setNewImagePreview(null);
+        setNewImageFile(null);
+      } catch (error) {
+        console.error(
+          "Save shop changes error:",
+          error
+        );
+
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Unable to save your shop changes. Please try again."
+        );
+
+        setConfirmOpen(false);
+      } finally {
+        setSaving(false);
+        setImageUploading(false);
+      }
+    };
+
+  /* ------------------------------------------------------------------------ */
+  /* LOADING                                                                   */
+  /* ------------------------------------------------------------------------ */
 
   if (loading) {
     return (
       <main className="min-h-screen bg-[#f5f6f4] text-[#111]">
-        <EditHeader router={router} />
+        <EditHeader
+          router={router}
+        />
 
         <section className="mx-auto w-full max-w-[820px] px-5 py-8 sm:px-8 sm:py-10">
           <div className="animate-pulse">
@@ -1168,42 +1927,33 @@ export default function EditShopPage() {
     );
   }
 
-  /*
-   * =========================================================
-   * PENDING SCREEN
-   * =========================================================
-   *
-   * THIS IS THE MAIN CHANGE.
-   *
-   * While pending:
-   *
-   * - no form
-   * - no cancel
-   * - no save
-   * - no back
-   * - no home
-   *
-   * User can only see that changes are under review.
-   */
+  /* ------------------------------------------------------------------------ */
+  /* PENDING SCREEN                                                             */
+  /* ------------------------------------------------------------------------ */
 
-  if (changeRequestStatus === "pending") {
+  if (
+    changeRequestStatus ===
+    "pending"
+  ) {
     return (
       <main className="min-h-screen bg-[#f5f6f4] text-[#111]">
-  <EditHeader router={router} />
-  <section className="flex min-h-[calc(100vh-70px)] items-center justify-center px-5 py-10">
+        <EditHeader
+          router={router}
+        />
+
+        <section className="flex min-h-[calc(100vh-70px)] items-center justify-center px-5 py-10">
           <div className="w-full max-w-[470px]">
             <div className="rounded-[28px] border border-black/[0.07] bg-white px-6 py-9 text-center shadow-[0_18px_60px_rgba(0,0,0,.05)] sm:px-9 sm:py-11">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#eef5ef] text-[#159447]">
                 <ReviewIcon />
               </div>
 
-      <div className="text-[10px] font-black text-[#159447]">
-  Changes submitted
-</div>
-
+              <div className="text-[10px] font-black text-[#159447]">
+                Changes submitted
+              </div>
 
               <h1 className="mt-2 text-[24px] font-black tracking-[-0.04em] sm:text-[28px]">
-                 Review in progress
+                Review in progress
               </h1>
 
               <p className="mx-auto mt-3 max-w-[340px] text-[11px] leading-5 text-black/45">
@@ -1219,12 +1969,12 @@ export default function EditShopPage() {
                   </div>
 
                   <div>
-                   <div className="text-[10px] font-black text-[#159447]">
-  Pending approval
-</div>
+                    <div className="text-[10px] font-black text-[#159447]">
+                      Pending approval
+                    </div>
 
                     <div className="mt-1 text-[9px] leading-4 text-[#159447]/65">
-                     You can update your shop again once this request has been processed.
+                      You can update your shop again once this request has been processed.
                     </div>
                   </div>
                 </div>
@@ -1240,21 +1990,15 @@ export default function EditShopPage() {
     );
   }
 
-  /*
-   * =========================================================
-   * NORMAL EDIT SCREEN
-   * =========================================================
-   *
-   * Reached when:
-   *
-   * - no request exists
-   * - latest request is approved
-   * - latest request is rejected
-   */
+  /* ------------------------------------------------------------------------ */
+  /* NORMAL EDIT SCREEN                                                        */
+  /* ------------------------------------------------------------------------ */
 
   return (
     <main className="min-h-screen bg-[#f5f6f4] text-[#111]">
-      <EditHeader router={router} />
+      <EditHeader
+        router={router}
+      />
 
       <section className="mx-auto w-full max-w-[820px] px-5 py-8 sm:px-8 sm:py-10">
         {/* PAGE INTRO */}
@@ -1347,19 +2091,25 @@ export default function EditShopPage() {
                     <div className="relative aspect-video w-[220px] shrink-0 overflow-hidden rounded-[14px] border border-black/[0.07] bg-white sm:w-[260px]">
                       {newImagePreview ? (
                         <img
-                          src={newImagePreview}
+                          src={
+                            newImagePreview
+                          }
                           alt="New shop preview"
                           className="h-full w-full object-cover"
                         />
                       ) : currentImageUrl ? (
                         <img
-                          src={currentImageUrl}
+                          src={
+                            currentImageUrl
+                          }
                           alt="Current shop"
                           className="h-full w-full object-cover"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-black/25">
-                          <StoreIcon size={22} />
+                          <StoreIcon
+                            size={22}
+                          />
                         </div>
                       )}
 
@@ -1386,7 +2136,6 @@ export default function EditShopPage() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <label className="inline-flex cursor-pointer items-center gap-2 rounded-[11px] bg-[#159447] px-4 py-2.5 text-[9px] font-black text-white transition hover:bg-[#117d3c]">
                           <ImageIcon />
-
                           Change Photo
 
                           <input
@@ -1396,7 +2145,9 @@ export default function EditShopPage() {
                             onChange={
                               handleImageChange
                             }
-                            disabled={saving}
+                            disabled={
+                              saving
+                            }
                           />
                         </label>
 
@@ -1406,7 +2157,9 @@ export default function EditShopPage() {
                             onClick={
                               handleCancelNewImage
                             }
-                            disabled={saving}
+                            disabled={
+                              saving
+                            }
                             className="rounded-[11px] border border-black/[0.08] bg-white px-4 py-2.5 text-[9px] font-black text-black/55 transition hover:text-black disabled:opacity-50"
                           >
                             Keep Current
@@ -1431,7 +2184,9 @@ export default function EditShopPage() {
               >
                 <input
                   type="text"
-                  value={form.storeName}
+                  value={
+                    form.storeName
+                  }
                   maxLength={32}
                   onChange={(event) =>
                     updateField(
@@ -1440,7 +2195,9 @@ export default function EditShopPage() {
                     )
                   }
                   placeholder="Enter your shop name"
-                  className={inputClass}
+                  className={
+                    inputClass
+                  }
                 />
               </Field>
 
@@ -1452,7 +2209,9 @@ export default function EditShopPage() {
               >
                 <div className="relative">
                   <select
-                    value={form.category}
+                    value={
+                      form.category
+                    }
                     onChange={(event) =>
                       updateField(
                         "category",
@@ -1468,10 +2227,16 @@ export default function EditShopPage() {
                     {categories.map(
                       (category) => (
                         <option
-                          key={category}
-                          value={category}
+                          key={
+                            category
+                          }
+                          value={
+                            category
+                          }
                         >
-                          {category}
+                          {
+                            category
+                          }
                         </option>
                       )
                     )}
@@ -1491,7 +2256,9 @@ export default function EditShopPage() {
               >
                 <input
                   type="text"
-                  value={form.ownerName}
+                  value={
+                    form.ownerName
+                  }
                   onChange={(event) =>
                     updateField(
                       "ownerName",
@@ -1499,7 +2266,9 @@ export default function EditShopPage() {
                     )
                   }
                   placeholder="Enter owner's name"
-                  className={inputClass}
+                  className={
+                    inputClass
+                  }
                 />
               </Field>
 
@@ -1514,7 +2283,9 @@ export default function EditShopPage() {
                   type="tel"
                   inputMode="numeric"
                   maxLength={10}
-                  value={form.phone}
+                  value={
+                    form.phone
+                  }
                   onChange={(event) => {
                     const value =
                       event.target.value.replace(
@@ -1528,7 +2299,9 @@ export default function EditShopPage() {
                     );
                   }}
                   placeholder="Enter mobile number"
-                  className={inputClass}
+                  className={
+                    inputClass
+                  }
                 />
               </Field>
             </div>
@@ -1542,7 +2315,9 @@ export default function EditShopPage() {
                 helper={`${form.description.length}/160`}
               >
                 <textarea
-                  value={form.description}
+                  value={
+                    form.description
+                  }
                   maxLength={160}
                   rows={5}
                   onChange={(event) =>
@@ -1565,23 +2340,97 @@ export default function EditShopPage() {
                 required
                 helper="Your customer-facing address"
               >
-                <div className="relative">
-                  <div className="pointer-events-none absolute left-4 top-[15px] text-[#159447]">
-                    <LocationIcon />
-                  </div>
+                <div className="rounded-[16px] border border-black/[0.07] bg-[#fafafa] p-3.5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-[#eef5ef] text-[#159447]">
+                        <LocationIcon />
+                      </div>
 
-                  <textarea
-                    value={form.address}
-                    rows={3}
-                    onChange={(event) =>
-                      updateField(
-                        "address",
-                        event.target.value
-                      )
-                    }
-                    placeholder="Enter your shop address or location"
-                    className={`${inputClass} min-h-[90px] resize-none py-3.5 pl-11 leading-5`}
-                  />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-black text-black/70">
+                          {form.latitude !==
+                            null &&
+                          form.longitude !==
+                            null
+                            ? "Shop location selected"
+                            : "Shop location not selected"}
+                        </div>
+
+                        <p className="mt-1 break-words text-[9px] leading-4 text-black/40">
+                          {form.address
+                            ? form.address
+                            : "Select your shop location using your current location or the map."}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrorMessage("");
+                        setSuccessMessage("");
+
+                        const existingLocation =
+                          form.latitude !==
+                            null &&
+                          form.longitude !==
+                            null
+                            ? {
+                                latitude:
+                                  form.latitude,
+                                longitude:
+                                  form.longitude,
+                              }
+                            : {
+                                latitude:
+                                  SERVICE_CENTER.lat,
+                                longitude:
+                                  SERVICE_CENTER.lng,
+                              };
+
+                        setSelectedMapLocation(
+                          existingLocation
+                        );
+
+                        setLocationCandidate(
+                          form.latitude !==
+                            null &&
+                          form.longitude !==
+                            null
+                            ? {
+                                address:
+                                  form.address,
+                                latitude:
+                                  form.latitude,
+                                longitude:
+                                  form.longitude,
+                              }
+                            : null
+                        );
+
+                        setLocationModal(
+                          true
+                        );
+
+                        loadGoogleMaps();
+                      }}
+                      disabled={
+                        saving ||
+                        locationLoading
+                      }
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-[11px] bg-[#159447] px-4 py-2.5 text-[9px] font-black text-white transition hover:bg-[#117d3c] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <LocationIcon />
+
+                      {form.latitude !==
+                        null &&
+                      form.longitude !==
+                        null
+                        ? "Update Location"
+                        : "Set Shop Location"}
+                    </button>
+                  </div>
                 </div>
               </Field>
             </div>
@@ -1606,8 +2455,12 @@ export default function EditShopPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <TimeField
                   label="Opening Time"
-                  value={form.openingTime}
-                  onChange={(value) =>
+                  value={
+                    form.openingTime
+                  }
+                  onChange={(
+                    value
+                  ) =>
                     updateField(
                       "openingTime",
                       value
@@ -1617,8 +2470,12 @@ export default function EditShopPage() {
 
                 <TimeField
                   label="Closing Time"
-                  value={form.closingTime}
-                  onChange={(value) =>
+                  value={
+                    form.closingTime
+                  }
+                  onChange={(
+                    value
+                  ) =>
                     updateField(
                       "closingTime",
                       value
@@ -1635,7 +2492,9 @@ export default function EditShopPage() {
             <button
               type="button"
               onClick={() =>
-                router.replace("/shop")
+                router.replace(
+                  "/shop"
+                )
               }
               disabled={saving}
               className="inline-flex items-center justify-center rounded-[13px] border border-black/[0.08] bg-white px-6 py-3 text-[10px] font-black text-black/60 transition hover:border-black/[0.14] hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
@@ -1678,26 +2537,245 @@ export default function EditShopPage() {
           publicly on your shop.
         </div>
 
-      {/* FOOTER */}
+        {/* FOOTER */}
 
-<div className="pb-8 pt-8 text-center">
-  <div className="text-[11px] font-semibold">
-    <span className="text-black/50">
-      © 2026
-    </span>{" "}
-    <span className="text-black/75">
-      PNT
-    </span>
-    <span className="text-[#159447]">
-      VERSE
-    </span>
-  </div>
-</div>
+        <div className="pb-8 pt-8 text-center">
+          <div className="text-[11px] font-semibold">
+            <span className="text-black/50">
+              © 2026
+            </span>{" "}
+            <span className="text-black/75">
+              PNT
+            </span>
+            <span className="text-[#159447]">
+              VERSE
+            </span>
+          </div>
+        </div>
       </section>
 
-      {/* =====================================================
-          CONFIRM MODAL
-          ===================================================== */}
+      {/* ------------------------------------------------------------------ */}
+      {/* LOCATION MODAL                                                      */}
+      {/* ------------------------------------------------------------------ */}
+
+      {locationModal && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center overflow-y-auto bg-black/45 px-4 py-5 backdrop-blur-[4px]">
+          <div className="flex max-h-[94vh] w-full max-w-[850px] flex-col overflow-hidden rounded-[24px] border border-white/10 bg-white shadow-[0_30px_100px_rgba(0,0,0,.28)]">
+            {/* HEADER */}
+
+            <div className="border-b border-black/[0.06] px-5 py-4 sm:px-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-[9px] font-black uppercase tracking-[0.14em] text-[#159447]">
+                    Shop Location
+                  </div>
+
+                  <h3 className="mt-1 text-[16px] font-black tracking-[-0.03em]">
+                    Set your shop location
+                  </h3>
+
+                  <p className="mt-1 text-[9px] leading-4 text-black/40">
+                    Keep your shop pin inside
+                    the green Apna Shyampur
+                    delivery area.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      locationLoading
+                    ) {
+                      return;
+                    }
+
+                    setLocationModal(
+                      false
+                    );
+
+                    setLocationCandidate(
+                      null
+                    );
+                    setErrorMessage(
+                      ""
+                    );
+                  }}
+                  disabled={
+                    locationLoading
+                  }
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/[0.08] bg-[#fafafa] text-black/45 transition hover:text-black disabled:opacity-50"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            </div>
+
+            {/* CURRENT LOCATION */}
+
+            <div className="px-5 pt-4 sm:px-6">
+              <button
+                type="button"
+                onClick={
+                  handleUseCurrentLocation
+                }
+                disabled={
+                  locationLoading
+                }
+                className="inline-flex w-full items-center justify-center gap-2 rounded-[12px] border border-[#159447]/15 bg-[#f2faf4] px-4 py-3 text-[9px] font-black text-[#159447] transition hover:bg-[#eaf7ed] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {locationLoading ? (
+                  <>
+                    <MiniSpinner />
+                    Getting location…
+                  </>
+                ) : (
+                  <>
+                    <LocationIcon />
+                    Use Current Location
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* MAP */}
+
+            <div className="px-5 pt-4 sm:px-6">
+              <div
+                ref={setMapContainer}
+                className="h-[330px] w-full overflow-hidden rounded-[18px] border border-black/[0.07] bg-[#eef1ee] sm:h-[390px]"
+              >
+                {!googleMapsLoaded && (
+                  <div className="flex h-full items-center justify-center px-5 text-center">
+                    <div>
+                      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#159447] shadow-sm">
+                        {locationLoading ? (
+                          <MiniSpinner />
+                        ) : (
+                          <LocationIcon />
+                        )}
+                      </div>
+
+                      <div className="mt-3 text-[10px] font-black">
+                        Loading map…
+                      </div>
+
+                      <div className="mt-1 text-[8.5px] leading-4 text-black/35">
+                        Your shop location will appear
+                        here.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* LOCATION DETAILS */}
+
+            <div className="px-5 pt-4 sm:px-6">
+              <div className="rounded-[14px] border border-black/[0.06] bg-[#fafafa] px-4 py-3.5">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 shrink-0 text-[#159447]">
+                    <LocationIcon />
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="text-[9px] font-black text-black/60">
+                      Selected address
+                    </div>
+
+                    <div className="mt-1 break-words text-[9px] leading-4 text-black/40">
+                      {locationCandidate?.address ||
+                        form.address ||
+                        "Move the pin or click on the map to select your shop location."}
+                    </div>
+
+                    {locationCandidate && (
+                      <div className="mt-1.5 text-[7.5px] font-semibold text-black/25">
+                        {locationCandidate.latitude.toFixed(
+                          6
+                        )}
+                        {" · "}
+                        {locationCandidate.longitude.toFixed(
+                          6
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* INFO */}
+
+            <div className="px-5 pt-3 sm:px-6">
+              <div className="rounded-[13px] border border-[#159447]/10 bg-[#f2faf4] px-3.5 py-3 text-[8px] leading-4 text-[#159447]/70">
+                The green circle shows the current
+                Apna Shyampur delivery area. Your shop
+                must be located inside this area.
+              </div>
+            </div>
+
+            {/* ACTIONS */}
+
+            <div className="mt-4 flex gap-2.5 border-t border-black/[0.06] bg-[#fafafa] px-5 py-4 sm:px-6">
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    locationLoading
+                  ) {
+                    return;
+                  }
+
+                  setLocationModal(
+                    false
+                  );
+
+                  setLocationCandidate(
+                    null
+                  );
+
+                  setErrorMessage(
+                    ""
+                  );
+                }}
+                disabled={
+                  locationLoading
+                }
+                className="flex-1 rounded-[12px] border border-black/[0.08] bg-white px-4 py-3 text-[10px] font-black text-black/60 transition hover:border-black/[0.15] hover:text-black disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={
+                  handleConfirmShopLocation
+                }
+                disabled={
+                  locationLoading ||
+                  !locationCandidate
+                }
+                className="flex-1 rounded-[12px] bg-[#159447] px-4 py-3 text-[10px] font-black text-white transition hover:bg-[#117d3c] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {locationLoading ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <MiniSpinner />
+                    Reading…
+                  </span>
+                ) : (
+                  "Confirm Location"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* CONFIRM MODAL                                                       */}
+      {/* ------------------------------------------------------------------ */}
 
       {confirmOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 px-5 backdrop-blur-[3px]">
@@ -1728,21 +2806,32 @@ export default function EditShopPage() {
                 <div className="mt-2 space-y-1.5">
                   {Object.keys(
                     buildChanges()
-                  ).map((key) => (
-                    <div
-                      key={key}
-                      className="flex items-center gap-2 text-[9px] font-semibold text-black/60"
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#159447]" />
+                  )
+                    .filter(
+                      (key) =>
+                        key !==
+                        "latitude" &&
+                        key !==
+                        "longitude"
+                    )
+                    .map(
+                      (key) => (
+                        <div
+                          key={key}
+                          className="flex items-center gap-2 text-[9px] font-semibold text-black/60"
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#159447]" />
 
-                      {formatChangeName(key)}
-                    </div>
-                  ))}
+                          {formatChangeName(
+                            key
+                          )}
+                        </div>
+                      )
+                    )}
 
                   {newImageFile && (
                     <div className="flex items-center gap-2 text-[9px] font-semibold text-black/60">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#159447]" />
-
                       Shop Photo
                     </div>
                   )}
@@ -1754,7 +2843,9 @@ export default function EditShopPage() {
               <button
                 type="button"
                 onClick={() =>
-                  setConfirmOpen(false)
+                  setConfirmOpen(
+                    false
+                  )
                 }
                 disabled={saving}
                 className="flex-1 rounded-[12px] border border-black/[0.08] bg-white px-4 py-3 text-[10px] font-black text-black/60 transition hover:border-black/[0.15] hover:text-black disabled:opacity-50"
@@ -1784,9 +2875,9 @@ export default function EditShopPage() {
         </div>
       )}
 
-      {/* =====================================================
-          CROP MODAL
-          ===================================================== */}
+      {/* ------------------------------------------------------------------ */}
+      {/* CROP MODAL                                                          */}
+      {/* ------------------------------------------------------------------ */}
 
       {cropOpen && cropImage && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-y-auto bg-black/55 px-4 py-5 backdrop-blur-[4px]">
@@ -1815,7 +2906,9 @@ export default function EditShopPage() {
                   onClick={
                     handleCropCancel
                   }
-                  disabled={cropSaving}
+                  disabled={
+                    cropSaving
+                  }
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/[0.08] bg-[#fafafa] text-black/45 transition hover:text-black disabled:opacity-50"
                 >
                   <CloseIcon />
@@ -1827,17 +2920,25 @@ export default function EditShopPage() {
 
             <div className="relative mx-5 mt-5 aspect-video overflow-hidden rounded-[18px] bg-[#111] sm:mx-6">
               <Cropper
-                image={cropImage}
+                image={
+                  cropImage
+                }
                 crop={crop}
                 zoom={zoom}
-                aspect={16 / 9}
+                aspect={
+                  16 / 9
+                }
                 cropShape="rect"
                 showGrid={true}
-                onCropChange={setCrop}
+                onCropChange={
+                  setCrop
+                }
                 onCropComplete={
                   onCropComplete
                 }
-                onZoomChange={setZoom}
+                onZoomChange={
+                  setZoom
+                }
               />
             </div>
 
@@ -1850,7 +2951,10 @@ export default function EditShopPage() {
                 </span>
 
                 <span className="text-[9px] font-bold text-black/30">
-                  {zoom.toFixed(1)}×
+                  {zoom.toFixed(
+                    1
+                  )}
+                  ×
                 </span>
               </div>
 
@@ -1863,7 +2967,9 @@ export default function EditShopPage() {
                 onChange={(event) =>
                   setZoom(
                     Number(
-                      event.target.value
+                      event
+                        .target
+                        .value
                     )
                   )
                 }
@@ -1871,8 +2977,13 @@ export default function EditShopPage() {
               />
 
               <div className="mt-1 flex justify-between text-[7px] font-bold text-black/25">
-                <span>MIN</span>
-                <span>MAX</span>
+                <span>
+                  MIN
+                </span>
+
+                <span>
+                  MAX
+                </span>
               </div>
             </div>
 
@@ -1884,7 +2995,9 @@ export default function EditShopPage() {
                 onClick={
                   handleCropCancel
                 }
-                disabled={cropSaving}
+                disabled={
+                  cropSaving
+                }
                 className="flex-1 rounded-[12px] border border-black/[0.08] bg-white px-4 py-3 text-[10px] font-black text-black/60 transition hover:border-black/[0.15] hover:text-black disabled:opacity-50"
               >
                 Cancel
@@ -1918,48 +3031,77 @@ export default function EditShopPage() {
   );
 }
 
-/*
- * =========================================================
- * CHANGE NAME
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* CHANGE NAME                                                                 */
+/* -------------------------------------------------------------------------- */
 
-function formatChangeName(key: string) {
-  const names: Record<string, string> = {
-    store_name: "Shop Name",
-    description: "Description",
-    category: "Category",
-    owner_name: "Owner Name",
-    phone: "Mobile Number",
-    address: "Shop Location",
-    opening_time: "Opening Time",
-    closing_time: "Closing Time",
-    store_image_url: "Shop Photo",
+function formatChangeName(
+  key: string
+) {
+  const names: Record<
+    string,
+    string
+  > = {
+    store_name:
+      "Shop Name",
+
+    description:
+      "Description",
+
+    category:
+      "Category",
+
+    owner_name:
+      "Owner Name",
+
+    phone:
+      "Mobile Number",
+
+    address:
+      "Shop Location",
+
+    latitude:
+      "Shop Location",
+
+    longitude:
+      "Shop Location",
+
+    opening_time:
+      "Opening Time",
+
+    closing_time:
+      "Closing Time",
+
+    store_image_url:
+      "Shop Photo",
   };
 
-  return names[key] || key;
+  return (
+    names[key] || key
+  );
 }
 
-/*
- * =========================================================
- * HEADER
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* HEADER                                                                      */
+/* -------------------------------------------------------------------------- */
 
 function EditHeader({
   router,
 }: {
-  router: ReturnType<typeof useRouter>;
+  router: ReturnType<
+    typeof useRouter
+  >;
 }) {
   return (
     <header className="sticky top-0 z-50 border-b border-black/[0.06] bg-[#f5f6f4]/90 backdrop-blur-xl">
       <div className="mx-auto flex h-[70px] max-w-[1400px] items-center justify-between px-5 sm:px-8 lg:px-10">
-
         {/* APNA SHYAMPUR */}
 
         <button
           type="button"
-          onClick={() => router.push("/")}
+          onClick={() =>
+            router.push("/")
+          }
           className="flex items-center gap-3"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#111] text-[9px] font-black tracking-tight text-white sm:h-9 sm:w-9 sm:text-[10px]">
@@ -1967,20 +3109,37 @@ function EditHeader({
           </div>
 
           <div className="leading-none text-left">
-
             <div className="flex items-baseline gap-[4px] text-[15px] font-black tracking-[-0.05em] sm:gap-[5px] sm:text-[18px]">
-              <span className="text-[#111]">APNA</span>
-              <span className="text-[#159447]">SHYAMPUR</span>
+              <span className="text-[#111]">
+                APNA
+              </span>
+
+              <span className="text-[#159447]">
+                SHYAMPUR
+              </span>
             </div>
 
             <div className="mt-1 flex items-center gap-1.5 text-[7.5px] font-bold tracking-[0.12em] text-black/55 sm:mt-1.5 sm:gap-2 sm:text-[9px] sm:tracking-[0.14em]">
-              <span>LOCALS</span>
-              <span className="text-[#159447]">•</span>
-              <span>TRUSTED</span>
-              <span className="text-[#159447]">•</span>
-              <span>FAST</span>
-            </div>
+              <span>
+                LOCALS
+              </span>
 
+              <span className="text-[#159447]">
+                •
+              </span>
+
+              <span>
+                TRUSTED
+              </span>
+
+              <span className="text-[#159447]">
+                •
+              </span>
+
+              <span>
+                FAST
+              </span>
+            </div>
           </div>
         </button>
 
@@ -1988,22 +3147,21 @@ function EditHeader({
 
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() =>
+            router.back()
+          }
           className="rounded-full border border-black/[0.08] bg-white/70 px-4 py-2 text-[10px] font-bold text-black/65 transition hover:border-black/[0.14] hover:bg-white hover:text-black sm:text-[11px]"
         >
           Back
         </button>
-
       </div>
     </header>
   );
 }
 
-/*
- * =========================================================
- * FIELD
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* FIELD                                                                       */
+/* -------------------------------------------------------------------------- */
 
 function Field({
   label,
@@ -2041,11 +3199,9 @@ function Field({
   );
 }
 
-/*
- * =========================================================
- * TIME FIELD
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* TIME FIELD                                                                  */
+/* -------------------------------------------------------------------------- */
 
 function TimeField({
   label,
@@ -2054,7 +3210,9 @@ function TimeField({
 }: {
   label: string;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (
+    value: string
+  ) => void;
 }) {
   return (
     <div className="rounded-[14px] border border-black/[0.07] bg-[#fafafa] p-3.5">
@@ -2082,11 +3240,9 @@ function TimeField({
   );
 }
 
-/*
- * =========================================================
- * REVIEW ICON
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* REVIEW ICON                                                                 */
+/* -------------------------------------------------------------------------- */
 
 function ReviewIcon() {
   return (
@@ -2101,16 +3257,18 @@ function ReviewIcon() {
       strokeLinejoin="round"
     >
       <path d="M12 6v6l4 2" />
-      <circle cx="12" cy="12" r="9" />
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+      />
     </svg>
   );
 }
 
-/*
- * =========================================================
- * STORE ICON
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* STORE ICON                                                                  */
+/* -------------------------------------------------------------------------- */
 
 function StoreIcon({
   size = 18,
@@ -2139,11 +3297,9 @@ function StoreIcon({
   );
 }
 
-/*
- * =========================================================
- * CLOSE ICON
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* CLOSE ICON                                                                  */
+/* -------------------------------------------------------------------------- */
 
 function CloseIcon() {
   return (
@@ -2162,11 +3318,9 @@ function CloseIcon() {
   );
 }
 
-/*
- * =========================================================
- * IMAGE ICON
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* IMAGE ICON                                                                  */
+/* -------------------------------------------------------------------------- */
 
 function ImageIcon() {
   return (
@@ -2199,11 +3353,9 @@ function ImageIcon() {
   );
 }
 
-/*
- * =========================================================
- * LOCATION ICON
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* LOCATION ICON                                                               */
+/* -------------------------------------------------------------------------- */
 
 function LocationIcon() {
   return (
@@ -2228,11 +3380,9 @@ function LocationIcon() {
   );
 }
 
-/*
- * =========================================================
- * CLOCK ICON
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* CLOCK ICON                                                                  */
+/* -------------------------------------------------------------------------- */
 
 function ClockIcon() {
   return (
@@ -2257,11 +3407,9 @@ function ClockIcon() {
   );
 }
 
-/*
- * =========================================================
- * CHEVRON
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* CHEVRON                                                                     */
+/* -------------------------------------------------------------------------- */
 
 function ChevronDownIcon() {
   return (
@@ -2280,11 +3428,9 @@ function ChevronDownIcon() {
   );
 }
 
-/*
- * =========================================================
- * SEND ICON
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* SEND ICON                                                                   */
+/* -------------------------------------------------------------------------- */
 
 function SendIcon({
   size = 15,
@@ -2303,17 +3449,14 @@ function SendIcon({
       strokeLinejoin="round"
     >
       <path d="m22 2-7 20-4-9-9-4Z" />
-
       <path d="M22 2 11 13" />
     </svg>
   );
 }
 
-/*
- * =========================================================
- * CHECK CIRCLE
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* CHECK CIRCLE                                                               */
+/* -------------------------------------------------------------------------- */
 
 function CheckCircleIcon() {
   return (
@@ -2338,11 +3481,9 @@ function CheckCircleIcon() {
   );
 }
 
-/*
- * =========================================================
- * WARNING
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* WARNING                                                                     */
+/* -------------------------------------------------------------------------- */
 
 function WarningIcon() {
   return (
@@ -2366,11 +3507,9 @@ function WarningIcon() {
   );
 }
 
-/*
- * =========================================================
- * MINI SPINNER
- * =========================================================
- */
+/* -------------------------------------------------------------------------- */
+/* MINI SPINNER                                                               */
+/* -------------------------------------------------------------------------- */
 
 function MiniSpinner() {
   return (

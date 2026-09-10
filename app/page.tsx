@@ -76,9 +76,27 @@ const categories = [
     icon: "dairy",
     description: "Fresh milk and dairy essentials",
   },
+  {
+    name: "Gifts & Toys",
+    icon: "gifts",
+    description: "Gifts, toys and celebration essentials",
+  },
+  {
+    name: "Clothes",
+    icon: "clothes",
+    description: "Clothing and fashion from local shops",
+  },
+  {
+    name: "Footwear",
+    icon: "footwear",
+    description: "Shoes, sandals and footwear nearby",
+  },
+  {
+    name: "Cosmetics",
+    icon: "cosmetics",
+    description: "Beauty, skincare and personal care",
+  },
 ];
-
-
 
 function CategoryIcon({ type }: { type: string }) {
   const common = {
@@ -162,7 +180,7 @@ if (type === "meat") {
   );
 }
 
-  if (type === "grocery") {
+   if (type === "grocery") {
     return (
       <svg {...common}>
         <path d="M5 7h18l-1.5 13h-15L5 7Z" />
@@ -170,6 +188,50 @@ if (type === "meat") {
         <path d="M9 12v4" />
         <path d="M14 12v4" />
         <path d="M19 12v4" />
+      </svg>
+    );
+  }
+
+  if (type === "gifts") {
+    return (
+      <svg {...common}>
+        <path d="M4 10h20v13H4z" />
+        <path d="M3 7h22v3H3z" />
+        <path d="M14 7v16" />
+        <path d="M12 7c-2.8 0-5-1.4-5-3.2C7 2.2 8.1 1 9.6 1c2.4 0 4.4 3 4.4 6" />
+        <path d="M14 7c0-3 2-6 4.4-6C19.9 1 21 2.2 21 3.8 21 5.6 18.8 7 16 7" />
+      </svg>
+    );
+  }
+
+    if (type === "clothes") {
+    return (
+      <svg {...common}>
+        <path d="M9 4.5 12 3l3 1.5 2.5 3L21 9l-2.5 4-2-1.5V23H7.5V11.5L5.5 13 3 9l3.5-1.5L9 4.5Z" />
+        <path d="M9 4.5c.4 2 1.5 3 3 3s2.6-1 3-3" />
+      </svg>
+    );
+  }
+
+  if (type === "footwear") {
+    return (
+      <svg {...common}>
+        <path d="M5 5.5c1.4 1.2 2.6 3.1 3.3 5.2.6 1.8 1.8 3.1 3.5 3.9l8.7 4.1c1.2.6 1.7 2.1 1.1 3.3-.4.8-1.2 1.3-2.1 1.3H9.5c-3.6 0-6.5-2.9-6.5-6.5 0-2.5 1-4.8 2-6.8.7-1.4.9-3 .4-4.5Z" />
+        <path d="M8 14.5c2.1 1.1 4.1 1.6 6.2 1.4" />
+        <path d="M6 11.5c1.5.5 2.9.7 4.4.5" />
+      </svg>
+    );
+  }
+
+  if (type === "cosmetics") {
+    return (
+      <svg {...common}>
+        <path d="M9 3h10v5H9z" />
+        <path d="M12 8v6.5" />
+        <path d="M16 8v6.5" />
+        <path d="M8 14.5h12v8H8z" />
+        <path d="M5 18.5h3" />
+        <path d="M20 18.5h3" />
       </svg>
     );
   }
@@ -957,7 +1019,7 @@ useEffect(() => {
           </div>
 
 
- <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-7 sm:grid-cols-4 lg:grid-cols-8">
+ <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-7 sm:grid-cols-4 lg:grid-cols-9">
 
   {categories.map((category) => (
     <button

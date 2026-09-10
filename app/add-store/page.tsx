@@ -13,7 +13,10 @@ const categories = [
   "Medical",
   "Bakery",
   "Dairy",
-  "Other",
+  "Gifts & Toys",
+  "Clothes",
+  "Footwear",
+  "Cosmetics",
 ];
 
 const SERVICE_CENTER = {

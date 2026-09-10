@@ -1006,92 +1006,83 @@ onSubmit={(e) => {
   </div>
 </section>
 
-     <section
+  <section
   id="categories"
   className="mx-auto max-w-[1400px] px-5 py-12 sm:px-8 sm:py-14 lg:px-10 lg:py-16"
 >
+  <div className="flex flex-col gap-7">
 
-        <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+    {/* CATEGORY HEADING */}
+    <div>
+      <div className="text-[10px] font-bold tracking-[0.2em] text-[#159447]">
+        SHOP BY CATEGORY
+      </div>
 
-          <div>
+      <h2 className="mt-2.5 text-[34px] font-black leading-[1] tracking-[-0.05em] sm:text-[42px]">
+        What are you{" "}
+        <br className="hidden sm:block" />
+        looking for?
+      </h2>
+    </div>
 
-            <div className="text-[10px] font-bold tracking-[0.2em] text-[#159447]">
-              SHOP BY CATEGORY
-            </div>
+    {/* CATEGORY GRID */}
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4 lg:grid-cols-8 xl:grid-cols-9">
+      {categories.map((category) => (
+        <button
+          key={category.name}
+          onClick={() => {
+            if (authLoading) return;
 
-            <h2 className="mt-2.5 text-[34px] font-black leading-[1] tracking-[-0.05em] sm:text-[42px]">
-  What are you{" "}
-  <br className="hidden sm:block" />
-  looking for?
-</h2>
+            if (!user) {
+              setShowSignIn(true);
+              return;
+            }
 
+            router.push(
+              `/all-shops?category=${encodeURIComponent(category.name)}`
+            );
+          }}
+          className="group flex min-h-[185px] flex-col rounded-[22px] border border-black/[0.07] bg-white p-4 text-left transition duration-300 hover:-translate-y-1 hover:border-[#159447]/30 hover:shadow-[0_18px_50px_rgba(0,0,0,.07)] active:scale-[0.98]"
+        >
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f0f5f0] text-[#159447] transition duration-300 group-hover:bg-[#159447] group-hover:text-white">
+            <CategoryIcon type={category.icon} />
           </div>
 
+          <div className="mt-5 text-[13px] font-black">
+            {category.name}
+          </div>
 
- <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-7 sm:grid-cols-4 lg:grid-cols-9">
+          <div className="mt-1.5 min-h-[30px] text-[10px] font-medium leading-[1.45] text-black/45">
+            {category.description}
+          </div>
 
-  {categories.map((category) => (
-    <button
-  key={category.name}
-  onClick={() => {
-  if (authLoading) return;
+          <div className="mt-auto pt-4">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#159447]/15 bg-[#159447]/[0.06] px-3 py-1.5 text-[9px] font-black text-[#159447] transition-all duration-200 group-hover:border-[#159447]/30 group-hover:bg-[#159447] group-hover:text-white">
+              Explore
 
-  if (!user) {
-    setShowSignIn(true);
-    return;
-  }
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="transition-transform duration-200 group-hover:translate-x-0.5"
+                aria-hidden="true"
+              >
+                <path d="M5 12h13" />
+                <path d="m13 6 6 6-6 6" />
+              </svg>
+            </span>
+          </div>
+        </button>
+      ))}
+    </div>
 
-  router.push(
-    `/all-shops?category=${encodeURIComponent(category.name)}`
-  );
-}}
-  className="group flex min-h-[185px] flex-col rounded-[22px] border border-black/[0.07] bg-white p-4 text-left transition duration-300 hover:-translate-y-1 hover:border-[#159447]/30 hover:shadow-[0_18px_50px_rgba(0,0,0,.07)] active:scale-[0.98]"
->
-
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f0f5f0] text-[#159447] transition duration-300 group-hover:bg-[#159447] group-hover:text-white">
-        <CategoryIcon type={category.icon} />
-      </div>
-
-      <div className="mt-5 text-[13px] font-black">
-        {category.name}
-      </div>
-
-      <div className="mt-1.5 min-h-[30px] text-[10px] font-medium leading-[1.45] text-black/45">
-        {category.description}
-      </div>
-
-      <div className="mt-auto pt-4">
-  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#159447]/15 bg-[#159447]/[0.06] px-3 py-1.5 text-[9px] font-black text-[#159447] transition-all duration-200 group-hover:border-[#159447]/30 group-hover:bg-[#159447] group-hover:text-white">
-    Explore
-
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="transition-transform duration-200 group-hover:translate-x-0.5"
-      aria-hidden="true"
-    >
-      <path d="M5 12h13" />
-      <path d="m13 6 6 6-6 6" />
-    </svg>
-  </span>
-</div>
-
-    </button>
-  ))}
-
-</div>
-
-        
-</div>
-
-      </section>
-
+  </div>
+</section>
 
      <section id="shops" className="bg-white py-12 sm:py-14">
 

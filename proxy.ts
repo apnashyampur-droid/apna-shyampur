@@ -7,14 +7,28 @@ export function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  // Maintenance page ko khud access karne dena hai
+  // Maintenance page itself must remain accessible
   if (pathname === "/maintenance") {
     return NextResponse.next();
   }
 
-  // Maintenance ON hai to har page ko maintenance par bhejo
+  // Static/public files must remain accessible during maintenance
+  const isStaticFile =
+    pathname.startsWith("/_next/") ||
+    pathname === "/favicon.ico" ||
+    /\.(jpg|jpeg|png|webp|gif|svg|ico|mp3|wav|ogg|m4a|css|js|json|woff|woff2|ttf|otf)$/i.test(
+      pathname
+    );
+
+  if (isStaticFile) {
+    return NextResponse.next();
+  }
+
+  // Redirect normal pages to maintenance
   if (maintenanceMode) {
-    return NextResponse.redirect(new URL("/maintenance", request.url));
+    return NextResponse.redirect(
+      new URL("/maintenance", request.url)
+    );
   }
 
   return NextResponse.next();

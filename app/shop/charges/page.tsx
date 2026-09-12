@@ -350,10 +350,51 @@ export default function PlatformChargesPage() {
           return;
         }
 
-        /*
+                /*
          * FIRST:
-         * Find the shop owned by the
-         * currently signed-in shopkeeper.
+         * Find the latest shop application
+         * of the currently signed-in shopkeeper.
+         */
+
+        const {
+          data: application,
+          error: applicationError,
+        } = await supabase
+          .from("store_applications")
+          .select(
+            "id, status, store_name"
+          )
+          .eq("user_id", user.id)
+          .order("created_at", {
+            ascending: false,
+          })
+          .limit(1)
+          .maybeSingle();
+
+        if (applicationError) {
+          console.error(
+            "APPLICATION FETCH ERROR:",
+            applicationError
+          );
+
+          throw new Error(
+            applicationError.message
+          );
+        }
+
+        if (
+          !application ||
+          application.status !== "approved"
+        ) {
+          throw new Error(
+            "Your approved shop could not be found."
+          );
+        }
+
+        /*
+         * SECOND:
+         * Find the actual shop using
+         * the application_id.
          */
 
         const {
@@ -362,9 +403,12 @@ export default function PlatformChargesPage() {
         } = await supabase
           .from("shops")
           .select(
-            "id, name, category"
+            "id, name, category, application_id"
           )
-          .eq("user_id", user.id)
+          .eq(
+            "application_id",
+            application.id
+          )
           .maybeSingle();
 
         if (shopError) {

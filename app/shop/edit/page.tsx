@@ -1820,20 +1820,84 @@ export default function EditShopPage() {
 
         /* INSERT */
 
-        const {
-          error: insertError,
-        } = await supabase
-          .from(
-            "shop_changes_request"
-          )
-          .insert({
-            id: requestId,
-            user_id: user.id,
-            changes,
-            status: "pending",
-            updated_at:
-              new Date().toISOString(),
-          });
+     const {
+  data: approvedApplication,
+  error: applicationLookupError,
+} = await supabase
+  .from("store_applications")
+  .select(
+    "id, store_name"
+  )
+  .eq("user_id", user.id)
+  .eq("status", "approved")
+  .order("created_at", {
+    ascending: false,
+  })
+  .limit(1)
+  .maybeSingle();
+
+if (
+  applicationLookupError ||
+  !approvedApplication
+) {
+  throw new Error(
+    applicationLookupError?.message ||
+      "Your approved shop could not be identified."
+  );
+}
+
+const {
+  data: actualShop,
+  error: shopLookupError,
+} = await supabase
+  .from("shops")
+  .select("id")
+  .eq(
+    "application_id",
+    approvedApplication.id
+  )
+  .eq("user_id", user.id)
+  .maybeSingle();
+
+if (
+  shopLookupError ||
+  !actualShop
+) {
+  throw new Error(
+    shopLookupError?.message ||
+      "Your shop record could not be identified."
+  );
+}
+
+const {
+  error: insertError,
+} = await supabase
+  .from(
+    "shop_changes_request"
+  )
+  .insert({
+    id: requestId,
+
+    application_id:
+      approvedApplication.id,
+
+    shop_id:
+      actualShop.id,
+
+    user_id:
+      user.id,
+
+    shop_name:
+      approvedApplication.store_name,
+
+    changes,
+
+    status:
+      "pending",
+
+    updated_at:
+      new Date().toISOString(),
+  });
 
         if (insertError) {
           console.error(

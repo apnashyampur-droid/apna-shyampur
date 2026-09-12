@@ -329,8 +329,23 @@ export default function PlatformChargesPage() {
   const [error, setError] =
     useState<string | null>(null);
 
-  const [expandedOrderId, setExpandedOrderId] =
-    useState<string | null>(null);
+ const [expandedOrderId, setExpandedOrderId] =
+  useState<string | null>(null);
+
+const [settledAmount, setSettledAmount] =
+  useState(0);
+
+const [pendingSettlementAmount, setPendingSettlementAmount] =
+  useState(0);
+
+const [settlementLoading, setSettlementLoading] =
+  useState(false);
+
+const [showSettlementConfirm, setShowSettlementConfirm] =
+  useState(false);
+
+const [settlementMessage, setSettlementMessage] =
+  useState<string | null>(null);
 
   const loadCharges = useCallback(
     async () => {
@@ -441,6 +456,61 @@ export default function PlatformChargesPage() {
 
         setShop(currentShop);
 
+const {
+  data: settlementData,
+  error: settlementError,
+} = await supabase
+  .from("shop_charge_settlements")
+  .select(
+    "id, amount, status, requested_at, approved_at"
+  )
+  .eq("shop_id", currentShop.id)
+  .order("requested_at", {
+    ascending: false,
+  });
+
+if (settlementError) {
+  console.error(
+    "SETTLEMENT FETCH ERROR:",
+    settlementError
+  );
+
+  throw new Error(
+    settlementError.message
+  );
+}
+
+const approvedTotal =
+  (settlementData || [])
+    .filter(
+      (item) =>
+        item.status === "approved"
+    )
+    .reduce(
+      (sum, item) =>
+        sum +
+        (Number(item.amount) || 0),
+      0
+    );
+
+const pendingTotal =
+  (settlementData || [])
+    .filter(
+      (item) =>
+        item.status === "pending"
+    )
+    .reduce(
+      (sum, item) =>
+        sum +
+        (Number(item.amount) || 0),
+      0
+    );
+
+setSettledAmount(approvedTotal);
+setPendingSettlementAmount(
+  pendingTotal
+);
+
         /*
          * SECOND:
          * Fetch every order belonging
@@ -531,13 +601,14 @@ export default function PlatformChargesPage() {
 
   const stats = useMemo(() => {
     if (chargeRate === null) {
-      return {
-        totalOrders: orders.length,
-        orderValue: 0,
-        platformCharges: 0,
-        netValue: 0,
-        chargeableOrders: 0,
-      };
+     return {
+  totalOrders: orders.length,
+  orderValue: 0,
+  platformCharges: 0,
+  netValue: 0,
+  chargeableOrders: 0,
+  currentOutstanding: 0,
+};
     }
 
     let orderValue = 0;
@@ -560,15 +631,121 @@ export default function PlatformChargesPage() {
       chargeableOrders += 1;
     }
 
-    return {
-      totalOrders: orders.length,
-      orderValue,
-      platformCharges,
-      netValue:
-        orderValue - platformCharges,
-      chargeableOrders,
-    };
-  }, [orders, chargeRate]);
+    const currentOutstanding = Math.max(
+  0,
+  platformCharges - settledAmount
+);
+
+return {
+  totalOrders: orders.length,
+  orderValue,
+  platformCharges,
+  netValue:
+    orderValue - platformCharges,
+  chargeableOrders,
+  currentOutstanding,
+};
+ }, [orders, chargeRate, settledAmount]);
+
+ const requestSettlement = async () => {
+  if (!shop) return;
+
+  const amount = stats.currentOutstanding;
+
+  if (amount <= 0) {
+    return;
+  }
+
+  try {
+    setSettlementLoading(true);
+    setSettlementMessage(null);
+
+    const {
+      data: {
+        user,
+      },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.replace(
+        "/sign-in?redirect=/shop/platform-charges"
+      );
+      return;
+    }
+
+    /*
+     * Prevent duplicate settlement requests.
+     */
+
+    const {
+      data: existingRequest,
+      error: existingError,
+    } = await supabase
+      .from("shop_charge_settlements")
+      .select("id")
+      .eq("shop_id", shop.id)
+      .eq("status", "pending")
+      .limit(1)
+      .maybeSingle();
+
+    if (existingError) {
+      throw new Error(
+        existingError.message
+      );
+    }
+
+    if (existingRequest) {
+      setPendingSettlementAmount(
+        amount
+      );
+
+      setSettlementMessage(
+        "A settlement request is already waiting for approval."
+      );
+
+      setShowSettlementConfirm(false);
+
+      return;
+    }
+
+    const {
+      error: insertError,
+    } = await supabase
+      .from("shop_charge_settlements")
+      .insert({
+        shop_id: shop.id,
+        amount,
+        status: "pending",
+      });
+
+    if (insertError) {
+      throw new Error(
+        insertError.message
+      );
+    }
+
+    setPendingSettlementAmount(amount);
+
+    setSettlementMessage(
+      "Settlement request sent. Waiting for Apna Shyampur approval."
+    );
+
+    setShowSettlementConfirm(false);
+  } catch (err) {
+    console.error(
+      "SETTLEMENT REQUEST ERROR:",
+      err
+    );
+
+    setSettlementMessage(
+      err instanceof Error
+        ? err.message
+        : "Unable to send settlement request."
+    );
+  } finally {
+    setSettlementLoading(false);
+  }
+};
 
   /* LOADING */
 
@@ -887,6 +1064,120 @@ export default function PlatformChargesPage() {
           </div>
 
         </section>
+
+        {/* SETTLEMENT */}
+
+<section className="mt-5 rounded-[22px] bg-white p-5 shadow-[0_8px_30px_rgba(0,0,0,.035)] sm:p-6">
+
+  <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+
+    <div>
+
+      <p className="text-[8px] font-black uppercase tracking-[0.12em] text-black/30">
+        Account Settlement
+      </p>
+
+      <h2 className="mt-1.5 text-[17px] font-black tracking-[-0.04em]">
+        Current Outstanding
+      </h2>
+
+      <p className="mt-1 max-w-[520px] text-[9px] leading-4 text-black/40">
+        Request settlement when your current platform
+        charges have been cleared with Apna Shyampur.
+      </p>
+
+    </div>
+
+    <div className="shrink-0 text-left sm:text-right">
+
+      <p className="text-[24px] font-black tracking-[-0.05em]">
+        ₹
+        {formatPrice(
+          stats.currentOutstanding
+        )}
+      </p>
+
+      {pendingSettlementAmount > 0 ? (
+        <p className="mt-1 text-[8px] font-black text-[#b47b15]">
+          Settlement request pending
+        </p>
+      ) : stats.currentOutstanding > 0 ? (
+        <button
+          type="button"
+          onClick={() =>
+            setShowSettlementConfirm(true)
+          }
+          disabled={settlementLoading}
+          className="mt-3 rounded-full bg-[#111] px-5 py-2.5 text-[9px] font-black text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Request Settlement
+        </button>
+      ) : (
+        <p className="mt-1 text-[8px] font-black text-[#159447]">
+          Account is clear
+        </p>
+      )}
+
+    </div>
+
+  </div>
+
+  <div className="mt-5 grid gap-2 sm:grid-cols-3">
+
+    <div className="rounded-[15px] bg-[#f5f6f4] p-3.5">
+
+      <p className="text-[7px] font-black uppercase tracking-[0.08em] text-black/30">
+        Total Charges
+      </p>
+
+      <p className="mt-1.5 text-[11px] font-black">
+        ₹
+        {formatPrice(
+          stats.platformCharges
+        )}
+      </p>
+
+    </div>
+
+    <div className="rounded-[15px] bg-[#f5f6f4] p-3.5">
+
+      <p className="text-[7px] font-black uppercase tracking-[0.08em] text-black/30">
+        Settled
+      </p>
+
+      <p className="mt-1.5 text-[11px] font-black text-[#159447]">
+        ₹
+        {formatPrice(
+          settledAmount
+        )}
+      </p>
+
+    </div>
+
+    <div className="rounded-[15px] bg-[#fff9ec] p-3.5">
+
+      <p className="text-[7px] font-black uppercase tracking-[0.08em] text-black/30">
+        Outstanding
+      </p>
+
+      <p className="mt-1.5 text-[11px] font-black text-[#b47b15]">
+        ₹
+        {formatPrice(
+          stats.currentOutstanding
+        )}
+      </p>
+
+    </div>
+
+  </div>
+
+  {settlementMessage && (
+    <div className="mt-4 rounded-[14px] bg-[#eaf7ef] px-4 py-3 text-[8px] font-bold leading-4 text-[#159447]">
+      {settlementMessage}
+    </div>
+  )}
+
+</section>
 
         {/* HOW IT WORKS */}
 
@@ -1653,6 +1944,77 @@ const afterCharge =
         </footer>
 
       </div>
+
+      {showSettlementConfirm && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[3px]">
+
+    <div className="w-full max-w-[390px] rounded-[26px] bg-white p-6 shadow-[0_20px_70px_rgba(0,0,0,.18)]">
+
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#f5f6f4] text-black">
+        <ChargeIcon size={20} />
+      </div>
+
+      <h2 className="mt-5 text-center text-[19px] font-black tracking-[-0.04em]">
+        Are you sure?
+      </h2>
+
+      <p className="mx-auto mt-2 max-w-[290px] text-center text-[9px] leading-5 text-black/45">
+        You are requesting settlement of
+        <span className="font-black text-black">
+          {" "}₹
+          {formatPrice(
+            stats.currentOutstanding
+          )}
+        </span>.
+        This request will be sent to Apna Shyampur
+        for approval.
+      </p>
+
+      <div className="mt-5 rounded-[15px] bg-[#f5f6f4] px-4 py-3 text-center">
+
+        <p className="text-[7px] font-black uppercase tracking-[0.1em] text-black/30">
+          Settlement Amount
+        </p>
+
+        <p className="mt-1 text-[20px] font-black tracking-[-0.04em]">
+          ₹
+          {formatPrice(
+            stats.currentOutstanding
+          )}
+        </p>
+
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-2">
+
+        <button
+          type="button"
+          onClick={() =>
+            setShowSettlementConfirm(false)
+          }
+          disabled={settlementLoading}
+          className="rounded-full border border-black/10 bg-white px-4 py-3 text-[9px] font-black text-black/55 transition hover:border-black/20 hover:text-black disabled:opacity-50"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={requestSettlement}
+          disabled={settlementLoading}
+          className="rounded-full bg-[#111] px-4 py-3 text-[9px] font-black text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {settlementLoading
+            ? "Sending..."
+            : "Yes, Request"}
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+)}
 
     </main>
   );

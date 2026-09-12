@@ -462,7 +462,7 @@ const {
 } = await supabase
   .from("shop_charge_settlements")
   .select(
-    "id, amount, status, requested_at, approved_at"
+    "id, amount, status, requested_at, approved_at, settled_until"
   )
   .eq("shop_id", currentShop.id)
   .order("requested_at", {
@@ -479,6 +479,34 @@ if (settlementError) {
     settlementError.message
   );
 }
+
+const approvedSettlements =
+  (settlementData || []).filter(
+    (item) =>
+      item.status === "approved" &&
+      item.settled_until
+  );
+
+const latestApprovedSettlement =
+  approvedSettlements.length > 0
+    ? approvedSettlements.reduce(
+        (latest, current) => {
+          if (!latest) return current;
+
+          return new Date(
+            current.settled_until
+          ).getTime() >
+            new Date(
+              latest.settled_until
+            ).getTime()
+            ? current
+            : latest;
+        },
+        null as
+          | (typeof approvedSettlements)[number]
+          | null
+      )
+    : null;
 
 const approvedTotal =
   (settlementData || [])
@@ -517,28 +545,37 @@ setPendingSettlementAmount(
          * to this shop.
          */
 
-        const {
-          data: orderData,
-          error: ordersError,
-        } = await supabase
-          .from("orders")
-        .select(`
-  id,
-  order_number,
-  shop_id,
-  shop_name,
-  status,
-  payment_status,
-  payment_method,
-  subtotal,
-  total_amount,
-  created_at,
-  items
-`)
-          .eq("shop_id", currentShop.id)
-          .order("created_at", {
-            ascending: false,
-          });
+      let ordersQuery = supabase
+  .from("orders")
+  .select(`
+    id,
+    order_number,
+    shop_id,
+    shop_name,
+    status,
+    payment_status,
+    payment_method,
+    subtotal,
+    total_amount,
+    created_at,
+    items
+  `)
+  .eq("shop_id", currentShop.id)
+  .order("created_at", {
+    ascending: false,
+  });
+
+if (latestApprovedSettlement?.settled_until) {
+  ordersQuery = ordersQuery.gt(
+    "created_at",
+    latestApprovedSettlement.settled_until
+  );
+}
+
+const {
+  data: orderData,
+  error: ordersError,
+} = await ordersQuery;
 
         if (ordersError) {
           console.error(
@@ -631,21 +668,17 @@ setPendingSettlementAmount(
       chargeableOrders += 1;
     }
 
-    const currentOutstanding = Math.max(
-  0,
-  platformCharges - settledAmount
-);
-
-return {
+  return {
   totalOrders: orders.length,
   orderValue,
   platformCharges,
   netValue:
     orderValue - platformCharges,
   chargeableOrders,
-  currentOutstanding,
+  currentOutstanding:
+    platformCharges,
 };
- }, [orders, chargeRate, settledAmount]);
+}, [orders, chargeRate]);
 
  const requestSettlement = async () => {
   if (!shop) return;
@@ -708,15 +741,19 @@ return {
       return;
     }
 
-    const {
-      error: insertError,
-    } = await supabase
-      .from("shop_charge_settlements")
-      .insert({
-        shop_id: shop.id,
-        amount,
-        status: "pending",
-      });
+const settlementBoundary =
+  new Date().toISOString();
+
+const {
+  error: insertError,
+} = await supabase
+  .from("shop_charge_settlements")
+  .insert({
+    shop_id: shop.id,
+    amount,
+    status: "pending",
+    settled_until: settlementBoundary,
+  });
 
     if (insertError) {
       throw new Error(

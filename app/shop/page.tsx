@@ -1021,7 +1021,38 @@ if (shopStatus === "pending") {
   />
 </section>
  
-      {/* QUICK ACTIONS */} 
+          {/* CHARGES */}
+
+        <section className="mt-5">
+          <div className="rounded-[22px] border border-black/[0.07] bg-white p-5 shadow-[0_12px_40px_rgba(0,0,0,.03)] sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#eef5ef] text-[#159447]">
+                  <ChargeIcon />
+                </div>
+
+               <div>
+  <h2 className="text-[14px] font-black tracking-[-0.03em]">
+    Platform Charges
+  </h2>
+
+  <p className="mt-1 max-w-[620px] text-[9px] leading-4 text-black/40">
+    View the platform charges applicable to orders from your shop.
+  </p>
+</div>
+</div>
+
+              <button
+                type="button"
+                onClick={() => router.push("/shop/charges")}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-[13px] bg-[#111] px-5 py-3 text-[10px] font-black text-white transition hover:bg-black/80"
+              >
+                Manage Charges
+                <ChevronIcon className="text-white/70" />
+              </button>
+            </div>
+          </div>
+        </section>
 
 <section className="mt-8">
   <SectionHeading
@@ -1973,6 +2004,24 @@ function DiscountIcon() {
     </svg> 
   ); 
 } 
+
+function ChargeIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 3v18" />
+      <path d="M17 7.5c0-1.7-2.2-3-5-3s-5 1.3-5 3 2.2 3 5 3 5 1.3 5 3-2.2 3-5 3-5-1.3-5-3" />
+    </svg>
+  );
+}
  
 function ImageIcon() { 
   return ( 

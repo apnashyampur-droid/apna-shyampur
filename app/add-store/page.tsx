@@ -12,12 +12,13 @@ const categories = [
   "Electronics",
   "Medical",
   "Bakery",
-  "Dairy",
   "Gifts & Toys",
   "Clothes",
   "Footwear",
   "Cosmetics",
 ];
+
+const CHARGES_TERMS_VERSION = "v1.0";
 
 const SERVICE_CENTER = {
   lat: 30.0614,
@@ -144,10 +145,95 @@ const reverseGeocodeLocation = async (
   return data.address as string;
 };
 
+
+const loadChargesForCategory = async (
+  selectedCategory: string
+) => {
+  if (!selectedCategory) {
+   setChargesPercent(null);
+setChargesAgreed(false);
+    return;
+  }
+
+  setChargesLoading(true);
+setChargesAgreed(false);
+
+  try {
+    const supabase = createClient();
+
+    const {
+      data,
+      error,
+    } = await supabase
+      .from("category_commissions")
+      .select("commission_percent")
+      .eq("category", selectedCategory)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (error) {
+      console.error(
+        "CHARGES FETCH ERROR:",
+        error
+      );
+
+      setChargesPercent(null);
+
+      setErrors((prev) => ({
+        ...prev,
+        category:
+         "We couldn't load the charges terms. Please try again."
+      }));
+
+      return;
+    }
+
+    if (!data) {
+      setChargesPercent(null);
+
+      setErrors((prev) => ({
+        ...prev,
+        category:
+          "Charges terms are not available for this category yet."
+      }));
+
+      return;
+    }
+
+    setChargesPercent(
+      Number(data.commission_percent)
+    );
+
+    setErrors((prev) => ({
+      ...prev,
+      category: undefined,
+    }));
+  } catch (error) {
+    console.error(
+      "CHARGES LOAD ERROR:",
+      error
+    );
+
+    setChargesPercent(null);
+
+    setErrors((prev) => ({
+      ...prev,
+      category:
+        "We couldn't load the charges terms. Please try again."
+    }));
+  } finally {
+    setChargesLoading(false);
+  }
+};
+
   const router = useRouter();
 
   const [storeName, setStoreName] = useState("");
   const [category, setCategory] = useState("");
+ const [chargesPercent, setChargesPercent] = useState<number | null>(null);
+const [chargesLoading, setChargesLoading] = useState(false);
+const [chargesAgreed, setChargesAgreed] = useState(false);
+const [chargesTermsOpen, setChargesTermsOpen] = useState(false);
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -745,6 +831,15 @@ useEffect(() => {
       newErrors.category = "Please select a category";
     }
 
+   if (
+  category &&
+  chargesPercent !== null &&
+  !chargesAgreed
+) {
+  newErrors.category =
+    "Please agree to the charges terms before submitting your shop.";
+}
+
     if (!storeImage) {
   newErrors.storeImage = "Please add a photo of your shop";
 }
@@ -782,6 +877,16 @@ useEffect(() => {
  const handleSubmit = async () => {
   if (!validateForm()) return;
 
+ if (
+  !category ||
+  chargesPercent === null ||
+  !chargesAgreed
+) {
+  alert(
+    "Please select a category and agree to the applicable charges terms."
+  );
+  return;
+}
   setIsSubmitting(true);
 
   try {
@@ -892,12 +997,18 @@ const applicationData = {
   owner_name: ownerName.trim(),
   phone: phone.replace(/\s/g, ""),
   address: address.trim(),
-    latitude: shopLatitude,
+  latitude: shopLatitude,
   longitude: shopLongitude,
   opening_time: openingTime,
   closing_time: closingTime,
   store_image_url: publicUrl,
   status: "pending",
+
+  commission_percent: chargesPercent,
+  commission_agreed: chargesAgreed,
+  commission_agreed_at: new Date().toISOString(),
+  commission_terms_version:
+    CHARGES_TERMS_VERSION,
 };
 
 let data;
@@ -1213,16 +1324,23 @@ if (existingStore) {
                   <div className="relative">
                     <select
                       value={category}
-                      onChange={(e) => {
-                        setCategory(e.target.value);
+                     onChange={(e) => {
+  const selectedCategory = e.target.value;
 
-                        if (errors.category) {
-                          setErrors((prev) => ({
-                            ...prev,
-                            category: undefined,
-                          }));
-                        }
-                      }}
+  setCategory(selectedCategory);
+  setChargesPercent(null);
+setChargesAgreed(false);
+  if (errors.category) {
+    setErrors((prev) => ({
+      ...prev,
+      category: undefined,
+    }));
+  }
+
+  if (selectedCategory) {
+    loadChargesForCategory(selectedCategory);
+  }
+}}
                       className={`h-12 w-full appearance-none rounded-[13px] border bg-[#fafbf9] px-4 pr-10 text-[12px] font-medium outline-none transition focus:bg-white ${
                         errors.category
                           ? "border-red-300"
@@ -1254,11 +1372,125 @@ if (existingStore) {
                     </svg>
                   </div>
 
-                  {errors.category && (
-                    <p className="mt-1.5 text-[9px] font-semibold text-red-500">
-                      {errors.category}
-                    </p>
-                  )}
+                    {errors.category && (
+  <p className="mt-1.5 text-[9px] font-semibold text-red-500">
+    {errors.category}
+  </p>
+)}
+                   {chargesLoading && (
+  <div className="mt-3 rounded-[15px] border border-black/[0.07] bg-[#fafbf9] px-4 py-3">
+    <div className="flex items-center gap-2">
+      <svg
+        className="h-3.5 w-3.5 animate-spin text-[#159447]"
+        viewBox="0 0 24 24"
+        fill="none"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="9"
+          stroke="currentColor"
+          strokeWidth="2"
+          opacity=".2"
+        />
+        <path
+          d="M21 12a9 9 0 0 0-9-9"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+
+      <span className="text-[9px] font-bold text-black/45">
+        Loading charges terms...
+      </span>
+    </div>
+  </div>
+)}
+
+{category &&
+  chargesPercent !== null &&
+
+  !chargesLoading && (
+    <div className="mt-3 rounded-[16px] border border-[#159447]/15 bg-[#f1f7f1] p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#159447]">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 3 5 6v5c0 4.6 2.9 8.2 7 10 4.1-1.8 7-5.4 7-10V6l-7-3Z" />
+            <path d="M12 8v4" />
+            <path d="M12 16h.01" />
+          </svg>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-black text-black">
+            Apna Shyampur charges
+          </div>
+
+          <p className="mt-1 text-[9px] leading-4 text-black/50">
+           For every successful sale in the{" "}
+<span className="font-bold text-black/65">
+  {category}
+</span>{" "}
+category, Apna Shyampur will charge{" "}
+<span className="font-black text-[#159447]">
+  {chargesPercent}%
+</span>{" "}
+of the product sale value.
+          </p>
+
+          <div className="mt-2 rounded-[11px] bg-white/80 px-3 py-2">
+            <p className="text-[8px] leading-4 text-black/45">
+              Example: On a ₹100 sale, Apna Shyampur charges would be ₹
+{chargesPercent.toFixed(2)}.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              setChargesTermsOpen(true)
+            }
+            className="mt-3 text-[9px] font-black text-[#159447] underline underline-offset-2"
+          >
+            View charges terms
+          </button>
+        </div>
+      </div>
+
+      <label className="mt-4 flex cursor-pointer items-start gap-2.5 rounded-[12px] border border-black/[0.07] bg-white px-3 py-3">
+        <input
+          type="checkbox"
+          checked={chargesAgreed}
+          onChange={(e) =>
+            setChargesAgreed(
+              e.target.checked
+            )
+          }
+          className="mt-0.5 h-3.5 w-3.5 accent-[#159447]"
+        />
+
+        <span className="text-[9px] leading-4 text-black/55">
+         I have read and agree to the{" "}
+<span className="font-black text-black/75">
+  {chargesPercent}% charges terms
+</span>{" "}
+for my selected category and understand that
+Apna Shyampur will charge this amount on
+applicable sales.
+        </span>
+      </label>
+    </div>
+  )}
                 </div>
 
                 {/* DESCRIPTION */}
@@ -2411,6 +2643,161 @@ if (existingStore) {
     </div>
   </div>
 )}
+
+{chargesTermsOpen &&
+  category &&
+  chargesPercent !== null && (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
+      <div className="w-full max-w-[500px] overflow-hidden rounded-[26px] bg-white shadow-2xl">
+
+        <div className="flex items-start justify-between gap-4 border-b border-black/[0.07] px-5 py-5">
+          <div>
+            <div className="text-[9px] font-black tracking-[0.16em] text-[#159447]">
+              YOUR CHARGES RATE
+            </div>
+
+            <h3 className="mt-1 text-[18px] font-black tracking-[-0.04em]">
+              {category} category
+            </h3>
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              setChargesTermsOpen(false)
+            }
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.05] text-black/55 transition hover:bg-black/[0.08] hover:text-black"
+            aria-label="Close charges terms"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
+              <path d="M6 6l12 12" />
+              <path d="M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="max-h-[65vh] overflow-y-auto px-5 py-5">
+
+          <div className="rounded-[17px] border border-[#159447]/15 bg-[#f1f7f1] p-4">
+            <div className="text-[9px] font-black tracking-[0.12em] text-[#159447]">
+              YOUR CHARGES RATE
+            </div>
+
+            <div className="mt-2 flex items-end gap-2">
+              <span className="text-[34px] font-black tracking-[-0.06em]">
+                {chargesPercent}%
+              </span>
+
+              <span className="pb-1 text-[9px] font-bold text-black/40">
+                per applicable sale
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-4">
+
+            <div>
+              <div className="text-[10px] font-black">
+                1. Charges
+              </div>
+
+              <p className="mt-1.5 text-[9px] leading-5 text-black/50">
+                For sales made through Apna Shyampur in the{" "}
+                <span className="font-bold text-black/70">
+                  {category}
+                </span>{" "}
+                category, Apna Shyampur will charge{" "}
+                <span className="font-black text-black/75">
+                  {chargesPercent}%
+                </span>{" "}
+                of the applicable sale value.
+              </p>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-black">
+                2. Example
+              </div>
+
+              <p className="mt-1.5 text-[9px] leading-5 text-black/50">
+                If a product is sold for ₹100, the applicable
+                Apna Shyampur charges at {chargesPercent}%
+                would be ₹
+                {chargesPercent.toFixed(2)}.
+              </p>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-black">
+                3. Category-based rate
+              </div>
+
+              <p className="mt-1.5 text-[9px] leading-5 text-black/50">
+                Charges may differ between categories.
+                Your applicable rate is determined by the category
+                selected for your shop.
+              </p>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-black">
+                4. Agreement
+              </div>
+
+              <p className="mt-1.5 text-[9px] leading-5 text-black/50">
+                By agreeing to these terms, you confirm that you
+                understand and accept the applicable charges
+                rate for your selected category.
+              </p>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-black">
+                5. Terms version
+              </div>
+
+              <p className="mt-1.5 text-[9px] leading-5 text-black/50">
+                These charges are recorded with your shop application, 
+              along with the applicable rate and agreement timestamp.
+              </p>
+            </div>
+
+          </div>
+        </div>
+
+        <div className="border-t border-black/[0.07] px-5 py-4">
+          <button
+            type="button"
+            onClick={() => {
+              setChargesAgreed(true);
+              setChargesTermsOpen(false);
+
+              setErrors((prev) => ({
+                ...prev,
+                category: undefined,
+              }));
+            }}
+            className="h-12 w-full rounded-[13px] bg-[#111] text-[10px] font-black text-white transition hover:bg-[#222]"
+          >
+            I understand and agree
+          </button>
+
+          <p className="mt-2 text-center text-[8px] text-black/30">
+            Your agreement will be saved with this shop application.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  )}
 
         {cropModalOpen && cropSource && (
   <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">

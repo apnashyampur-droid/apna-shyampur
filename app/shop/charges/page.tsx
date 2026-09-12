@@ -28,7 +28,6 @@ type Order = {
   payment_status: string | null;
   payment_method: string | null;
   subtotal: number;
-  delivery_fee: number;
   total_amount: number;
   created_at: string;
   items: OrderItem[] | null;
@@ -175,9 +174,12 @@ function isChargeableOrder(
     .replace(/-/g, "_");
 
   return (
-    value !== "cancelled" &&
-    value !== "canceled" &&
-    value !== "rejected"
+    value === "accepted" ||
+    value === "preparing" ||
+    value === "ready" ||
+    value === "out_for_delivery" ||
+    value === "delivered" ||
+    value === "completed"
   );
 }
 
@@ -450,20 +452,19 @@ export default function PlatformChargesPage() {
           error: ordersError,
         } = await supabase
           .from("orders")
-          .select(`
-            id,
-            order_number,
-            shop_id,
-            shop_name,
-            status,
-            payment_status,
-            payment_method,
-            subtotal,
-            delivery_fee,
-            total_amount,
-            created_at,
-            items
-          `)
+        .select(`
+  id,
+  order_number,
+  shop_id,
+  shop_name,
+  status,
+  payment_status,
+  payment_method,
+  subtotal,
+  total_amount,
+  created_at,
+  items
+`)
           .eq("shop_id", currentShop.id)
           .order("created_at", {
             ascending: false,
@@ -480,25 +481,22 @@ export default function PlatformChargesPage() {
           );
         }
 
-        const formattedOrders: Order[] =
-          (orderData || []).map(
-            (order) => ({
-              ...order,
-              subtotal:
-                Number(order.subtotal) || 0,
-              delivery_fee:
-                Number(order.delivery_fee) ||
-                0,
-              total_amount:
-                Number(order.total_amount) ||
-                0,
-              items: Array.isArray(
-                order.items
-              )
-                ? (order.items as OrderItem[])
-                : [],
-            })
-          );
+      const formattedOrders: Order[] =
+  (orderData || []).map(
+    (order) => ({
+      ...order,
+      subtotal:
+        Number(order.subtotal) || 0,
+      total_amount:
+        Number(order.total_amount) ||
+        0,
+      items: Array.isArray(
+        order.items
+      )
+        ? (order.items as OrderItem[])
+        : [],
+    })
+  );
 
         setOrders(formattedOrders);
       } catch (err) {
@@ -1067,25 +1065,26 @@ export default function PlatformChargesPage() {
                   0
                 );
 
-              const chargeable =
-                isChargeableOrder(
-                  order.status
-                );
+         const chargeable =
+  isChargeableOrder(
+    order.status
+  );
 
-              const baseAmount =
-                Number(order.subtotal) || 0;
+const baseAmount =
+  Number(order.subtotal) || 0;
 
-              const orderCharge =
-                categoryConfigured &&
-                chargeable
-                  ? (baseAmount *
-                      chargeRate!) /
-                    100
-                  : 0;
+const orderCharge =
+  categoryConfigured &&
+  chargeable
+    ? (baseAmount *
+        chargeRate!) /
+      100
+    : 0;
 
-              const afterCharge =
-                baseAmount -
-                orderCharge;
+const afterCharge =
+  chargeable
+    ? baseAmount - orderCharge
+    : 0;
 
               return (
                 <article
@@ -1148,11 +1147,11 @@ export default function PlatformChargesPage() {
                         <div className="flex shrink-0 flex-col items-end gap-2">
 
                           <div className="text-[15px] font-black tracking-[-0.03em]">
-                            ₹
-                            {formatPrice(
-                              order.total_amount
-                            )}
-                          </div>
+  ₹
+  {formatPrice(
+    Number(order.subtotal) || 0
+  )}
+</div>
 
                           <div className="flex items-center gap-1 text-[8px] font-black text-black/35">
                             {itemCount}{" "}
